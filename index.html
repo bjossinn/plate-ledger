@@ -358,6 +358,22 @@
   .row.done .tick { background: var(--day); border-color: var(--day); color: #fff; }
   .row.done input { background: color-mix(in srgb, var(--day) var(--tint), var(--field)); border-color: color-mix(in srgb, var(--day) 35%, var(--line)); }
 
+  /* a record is called out in words, not by colour alone */
+  .pr-flag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--day);
+    padding: 1px 0 3px 38px;
+  }
+  .pr-flag svg { width: 13px; height: 13px; flex: 0 0 auto; }
+  .row.pr .idx { color: var(--day); }
+  .row.pr input { border-color: color-mix(in srgb, var(--day) 55%, var(--line)); }
+
   .row-tools { display: flex; gap: 8px; padding-top: 3px; }
   .row-tools .btn { flex: 1; }
 
@@ -431,6 +447,8 @@
   .hist-ex { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start; }
   .hist-name { font-size: 13px; font-weight: 600; align-self: center; }
   .hist-name em { font-style: normal; color: var(--faint); font-weight: 600; font-size: 11px; margin-left: 6px; }
+  .hist-pr { color: var(--c); margin-right: 5px; }
+  .hist-pr svg { width: 12px; height: 12px; vertical-align: -1px; }
   .hist-sets { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
   .hist-sets i {
     font-style: normal;
@@ -566,6 +584,10 @@
   }
   .done-delta { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
   .done-delta b { color: var(--day); font-weight: 700; }
+  .done-prs { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .done-pr { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .done-pr svg { width: 14px; height: 14px; color: var(--day); flex: 0 0 auto; }
+  .done-pr b { color: var(--ink); font-weight: 700; }
 
   .empty { text-align: center; color: var(--muted); padding: 44px 20px; font-size: 14px; }
   .empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 5px; }
@@ -679,7 +701,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.4.0";
+  var VERSION = "1.5.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -940,6 +962,62 @@
     return v;
   }
 
+  /* ---------- personal records ----------
+     Epley: a top single and a heavy triple are not comparable on weight alone,
+     so records are scored on estimated one-rep max. Per-hand entries are only
+     ever compared with other per-hand entries. */
+  function e1rm(w, r) {
+    var weight = parseFloat(w) || 0, reps = parseFloat(r) || 0;
+    if (weight <= 0 || reps <= 0) return 0;
+    return weight * (1 + reps / 30);
+  }
+
+  function bestBefore(exId, each, exceptKey) {
+    var best = 0;
+    for (var k in state.sessions) {
+      if (k === exceptKey) continue;
+      var e = state.sessions[k].entries[exId];
+      if (!e || !!e.each !== !!each) continue;
+      e.sets.forEach(function (s) {
+        if (s.done) best = Math.max(best, e1rm(s.w, s.r));
+      });
+    }
+    return best;
+  }
+
+  /* Records in one session: the set that beat everything before it, and only
+     the best such set per exercise — three PRs on one exercise is one PR. */
+  function recordsIn(session, program) {
+    var out = [];
+    for (var exId in session.entries) {
+      var e = session.entries[exId];
+      var prior = bestBefore(exId, e.each, session.key);
+      if (prior <= 0) continue;            /* first time counts as a baseline, not a PR */
+      var top = null;
+      e.sets.forEach(function (s) {
+        if (!s.done) return;
+        var v = e1rm(s.w, s.r);
+        if (v > prior + 0.01 && (!top || v > top.e1rm)) top = { e1rm: v, w: s.w, r: s.r };
+      });
+      if (top) out.push({ exId: exId, name: e.name, each: !!e.each, w: top.w, r: top.r, e1rm: top.e1rm, prior: prior });
+    }
+    return out.sort(function (a, b) { return (b.e1rm - b.prior) - (a.e1rm - a.prior); });
+  }
+
+  function isRecordSet(session, exId, index) {
+    var e = session.entries[exId];
+    if (!e || !e.sets[index] || !e.sets[index].done) return false;
+    var v = e1rm(e.sets[index].w, e.sets[index].r);
+    if (v <= 0) return false;
+    var prior = bestBefore(exId, e.each, session.key);
+    if (prior <= 0 || v <= prior + 0.01) return false;
+    /* only the best set of the session wears the badge */
+    for (var i = 0; i < e.sets.length; i++) {
+      if (i !== index && e.sets[i].done && e1rm(e.sets[i].w, e.sets[i].r) > v) return false;
+    }
+    return true;
+  }
+
   function plannedSets(day, session) {
     return day.ex.reduce(function (a, ex) {
       var e = session.entries[ex.id];
@@ -1098,15 +1176,16 @@
 
   /* ---------- train view ---------- */
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  var STAR = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.6l2.7 6.1 6.6.6-5 4.4 1.5 6.5-5.8-3.5-5.8 3.5 1.5-6.5-5-4.4 6.6-.6z"/></svg>';
 
   function unitLabel(ex) { return ex.each ? state.unit + " / hand" : state.unit; }
 
-  function trainHTML(day) {
-    var s = currentSession();
-    var key = s.key;
-    var cards = day.ex.map(function (ex) {
+  /* One card, rendered on its own so ticking a set can refresh just that card —
+     records and the set tools depend on what was ticked, but a full re-render
+     would tear down whatever the user is typing in elsewhere. */
+  function exerciseCardHTML(s, ex) {
       var e = entryFor(s, ex);
-      var last = lastFor(ex.id, key);
+      var last = lastFor(ex.id, s.key);
       var lastLine = "";
       if (last) {
         lastLine = '<div class="last">Last <b>' + esc(prettyDate(last.date)) + "</b> · " +
@@ -1117,12 +1196,19 @@
       var rows = e.sets.map(function (st, i) {
         /* only carry a weight forward if it was logged the same way */
         var prefill = last && last.sets[i] && last.each === !!ex.each ? last.sets[i].w : "";
-        return '<div class="row' + (st.done ? " done" : "") + '" data-ex="' + ex.id + '" data-i="' + i + '">' +
+        var record = isRecordSet(s, ex.id, i);
+        return '<div class="row' + (st.done ? " done" : "") + (record ? " pr" : "") +
+          '" data-ex="' + ex.id + '" data-i="' + i + '">' +
           '<div class="idx num">' + (i + 1) + "</div>" +
           '<input type="number" inputmode="decimal" step="any" data-f="w" value="' + esc(st.w) + '" placeholder="' + esc(prefill || state.unit) + '" aria-label="Weight, set ' + (i + 1) + '">' +
           '<input type="number" inputmode="numeric" step="1" data-f="r" value="' + esc(st.r) + '" placeholder="reps" aria-label="Reps, set ' + (i + 1) + '">' +
           '<button class="tick" data-tick aria-label="Mark set ' + (i + 1) + ' done" aria-pressed="' + st.done + '">' + CHECK + "</button>" +
-          "</div>";
+          "</div>" +
+          (record
+            ? '<div class="pr-flag">' + STAR + "Personal record · est. 1RM " +
+              (Math.round(e1rm(st.w, st.r) * 10) / 10) + " " + esc(state.unit) +
+              (ex.each ? " per hand" : "") + "</div>"
+            : "");
       }).join("");
 
       return '<section class="card" data-card="' + ex.id + '">' +
@@ -1141,7 +1227,11 @@
             (e.sets.length > ex.sets ? '<button class="btn sm" data-rmset="' + ex.id + '">− Set</button>' : "") +
           "</div>" +
         "</div></section>";
-    }).join("");
+  }
+
+  function trainHTML(day) {
+    var s = currentSession();
+    var cards = day.ex.map(function (ex) { return exerciseCardHTML(s, ex); }).join("");
 
     var warn = store ? "" : '<div class="warn"><b>Storage is blocked in this view.</b> Your log will vanish when you close the page — open the artifact link directly in Safari, or copy a backup from the Data tab before you leave.</div>';
 
@@ -1200,9 +1290,10 @@
         /* Rest only while sets remain. */
         if (allDone(getDay(state.day), s)) stopTimer(); else startTimer(restOf(ex));
       }
-      row.classList.toggle("done", st.done);
-      tick.setAttribute("aria-pressed", String(st.done));
       save();
+      /* redraw this card only: whether a set is a record depends on the others */
+      var card = tick.closest("[data-card]");
+      if (card) card.outerHTML = exerciseCardHTML(s, ex);
       updateProgress();
       paintTimer();
       return;
@@ -1543,6 +1634,7 @@
   function showSummary(session) {
     var key = session.key;
     var vol = Math.round(volumeOf(session));
+    var records = recordsIn(session);
     var prev = prevSessionFor(session.dayId, key);
     var line;
     if (!prev) {
@@ -1567,6 +1659,15 @@
           "<div><b>" + vol.toLocaleString() + "</b><span>" + state.unit + " volume</span></div>" +
         "</div>" +
         '<p class="done-delta">' + line + "</p>" +
+        (records.length
+          ? '<div class="done-prs"><div class="lab">' +
+              (records.length === 1 ? "New record" : records.length + " new records") + "</div>" +
+              records.map(function (r) {
+                return '<div class="done-pr">' + STAR + "<span><b>" + esc(r.name) + "</b> · " +
+                  esc(r.w) + " × " + esc(r.r) + (r.each ? " per hand" : "") + "</span></div>";
+              }).join("") +
+            "</div>"
+          : "") +
         '<div class="segs">' +
           '<button class="btn day" data-doneclose>Done</button>' +
           '<button class="btn" data-donehistory>See history</button>' +
@@ -1616,13 +1717,15 @@
 
         if (open) {
           var lines = [];
+          var prIds = {};
+          recordsIn(s).forEach(function (r) { prIds[r.exId] = true; });
           for (var id in s.entries) {
             var e = s.entries[id];
             var d = e.sets.filter(function (x) { return x.done; });
             if (!d.length) continue;
             lines.push(
               '<div class="hist-ex">' +
-                '<span class="hist-name">' + esc(e.name) +
+                '<span class="hist-name">' + (prIds[id] ? '<span class="hist-pr">' + STAR + "</span>" : "") + esc(e.name) +
                   (e.each ? "<em>per hand</em>" : "") + "</span>" +
                 '<span class="hist-sets">' + d.map(function (x) {
                   return "<i>" + esc(x.w || "–") + "×" + esc(x.r || "–") + "</i>";
@@ -1634,8 +1737,9 @@
             '<button class="btn sm danger" data-delsession="' + esc(k) + '">Delete this session</button></div>';
         }
 
-        return '<section class="card">' +
-          '<button class="hist" data-session="' + esc(k) + '" style="--c: var(--plate-' + (s.color || "blue") + ')">' +
+        /* --c sits on the card so the expanded body can use it too */
+        return '<section class="card" style="--c: var(--plate-' + (s.color || "blue") + ')">' +
+          '<button class="hist" data-session="' + esc(k) + '">' +
             '<span class="bar"></span>' +
             '<span class="hist-main">' +
               "<b>" + esc(s.dayName) + "</b>" +
