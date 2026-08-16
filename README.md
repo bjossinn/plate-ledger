@@ -45,6 +45,20 @@ Schema and the security model: [supabase/schema.sql](supabase/schema.sql). The p
 sits in this public repo by design — row-level security is the entire boundary, and it is
 tested by attacking it (see the two-tier sharing rules in that file).
 
+### Friends and activity
+
+Add people by handle, accept or ignore requests, and see a shared feed of workouts started and
+finished, records set and daily goals hit — yours and theirs together.
+
+Sharing is two-tier and the tiers are enforced in Postgres, not in the UI. Accepted friends see
+**summaries** automatically: day name, date, sets, volume, PRs, fuel totals. Your **individual
+sets and weights** stay private until you turn detail on for a specific person, and that switch
+is one-way — turning it on for someone does not let you see theirs.
+
+Activity is re-derived from the local log on each sync rather than fired when it happens,
+because when it happens you are usually in a gym with no signal. Each event carries a
+`dedup_key`, so re-syncing can never duplicate the feed, and only the last 14 days are emitted.
+
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the

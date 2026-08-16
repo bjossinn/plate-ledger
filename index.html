@@ -159,10 +159,10 @@
     color: var(--faint);
   }
 
-  /* four tabs need the full width on a phone, so the nav gets its own row */
+  /* five tabs need the full width on a phone, so the nav gets its own row */
   .nav {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 2px;
     background: var(--surface-2);
     border: 1px solid var(--line);
@@ -176,12 +176,13 @@
     background: transparent;
     color: var(--muted);
     font: inherit;
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 700;
-    letter-spacing: .02em;
-    padding: 7px 11px;
+    letter-spacing: 0;
+    padding: 8px 2px;
     border-radius: 8px;
     cursor: pointer;
+    white-space: nowrap;
   }
   .nav button[aria-current="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 
@@ -514,6 +515,70 @@
   }
   .week i.on { background: var(--m); border-color: var(--m); }
 
+  /* ---- friends & feed ---- */
+  .feed-item { display: grid; grid-template-columns: 30px 1fr auto; gap: 11px; align-items: start; padding: 12px 14px; }
+  .feed-item + .feed-item { border-top: 1px solid var(--line); }
+  .feed-ico {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    display: grid; place-items: center;
+    background: color-mix(in srgb, var(--e) var(--tint), var(--surface-2));
+    color: var(--e);
+  }
+  .feed-ico svg { width: 15px; height: 15px; }
+  .feed-body { min-width: 0; }
+  .feed-line { font-size: 13.5px; line-height: 1.4; }
+  .feed-line b { font-weight: 700; }
+  .feed-sub { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .feed-when { font-size: 11px; color: var(--faint); font-weight: 600; white-space: nowrap; padding-top: 2px; }
+
+  .who { display: grid; grid-template-columns: 34px 1fr auto; gap: 11px; align-items: center; padding: 12px 14px; }
+  .who + .who { border-top: 1px solid var(--line); }
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: 13px; font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .who-main { min-width: 0; }
+  .who-main b { display: block; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; }
+  .who-main span { font-size: 12px; color: var(--muted); }
+  .who-acts { display: flex; gap: 6px; align-items: center; }
+
+  .share-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 11px 14px 13px;
+    border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .share-row span { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .switch {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 46px; height: 27px;
+    border-radius: 999px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    position: relative;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 21px; height: 21px;
+    border-radius: 50%;
+    background: var(--faint);
+    transition: transform .15s ease, background .15s ease;
+  }
+  .switch[aria-pressed="true"] { background: var(--day); border-color: var(--day); }
+  .switch[aria-pressed="true"]::after { transform: translateX(19px); background: #fff; }
+
   /* ---- session complete ---- */
   .scrim {
     position: fixed;
@@ -677,6 +742,7 @@
     <nav class="nav" id="nav">
       <button data-view="train" aria-current="true">Train</button>
       <button data-view="fuel">Fuel</button>
+      <button data-view="friends">Friends</button>
       <button data-view="history">History</button>
       <button data-view="data">Data</button>
     </nav>
@@ -701,7 +767,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.6.1";
+  var VERSION = "1.7.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -813,6 +879,19 @@
 
   function defaultFuel() { return { targets: defaultTargets(), days: {} }; }
 
+  /* Cached so the Friends tab shows something without a signal. */
+  function defaultSocial() { return { links: [], people: {}, feed: [], fetchedAt: null }; }
+
+  function normalizeSocial(v) {
+    if (!v || typeof v !== "object") return defaultSocial();
+    return {
+      links: Array.isArray(v.links) ? v.links : [],
+      people: (v.people && typeof v.people === "object") ? v.people : {},
+      feed: Array.isArray(v.feed) ? v.feed : [],
+      fetchedAt: v.fetchedAt || null
+    };
+  }
+
   function defaultState() {
     return {
       v: 1,
@@ -820,6 +899,7 @@
       sessions: {},
       fuel: defaultFuel(),
       cloud: { lastSyncAt: null },
+      social: defaultSocial(),
       unit: "kg",
       rest: 120,
       theme: "system",
@@ -843,6 +923,7 @@
           sessions: normalizeSessions(saved.sessions),
           fuel: normalizeFuel(saved.fuel),
           cloud: (saved.cloud && typeof saved.cloud === "object") ? saved.cloud : { lastSyncAt: null },
+          social: normalizeSocial(saved.social),
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
           theme: saved.theme || "system",
@@ -1097,7 +1178,9 @@
     if (!b) return;
     ui.view = b.dataset.view;
     ui.edit = false;
+    ui.friend = null;
     render();
+    if (ui.view === "friends" && auth) loadSocial();
   });
 
   function renderDays() {
@@ -1170,6 +1253,7 @@
 
     if (ui.view === "train") viewEl.innerHTML = ui.edit ? editHTML(day) : trainHTML(day);
     else if (ui.view === "fuel") viewEl.innerHTML = fuelHTML();
+    else if (ui.view === "friends") viewEl.innerHTML = friendsHTML();
     else if (ui.view === "history") viewEl.innerHTML = historyHTML();
     else viewEl.innerHTML = dataHTML();
     updateProgress();
@@ -1324,6 +1408,7 @@
     if (t.closest("[data-doneedit]")) { ui.edit = false; render(); return; }
 
     handleFuelClick(t);
+    handleFriendsClick(t);
     handleEditClick(t);
     handleDataClick(t);
     handleHistoryClick(t);
@@ -1899,6 +1984,7 @@
           sessions: normalizeSessions(parsed.sessions),
           fuel: normalizeFuel(parsed.fuel),
           cloud: (parsed.cloud && typeof parsed.cloud === "object") ? parsed.cloud : { lastSyncAt: null },
+          social: normalizeSocial(parsed.social),
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
           theme: parsed.theme || "system",
@@ -1947,6 +2033,7 @@
 
   var auth = null;
   var sync = { busy: false, error: null };
+  var social = { busy: false, error: null, friendData: null };
 
   function loadAuth() {
     if (!store) return null;
@@ -2031,6 +2118,11 @@
   function signOut() {
     auth = null;
     saveAuth();
+    /* someone else's activity has no business sitting on the phone afterwards */
+    state.social = defaultSocial();
+    social.friendData = null;
+    ui.friend = null;
+    save();
     render();
   }
 
@@ -2152,6 +2244,7 @@
       })
       .then(function () { return upsert("fuel_days", fuelRows(), "user_id,date"); })
       .then(function () { return upsert("prs", recordRows(), "user_id,exercise,achieved_on,weight,reps"); })
+      .then(pushEvents)
       .then(function () {
         state.cloud.lastSyncAt = Date.now();
         save();
@@ -2211,6 +2304,164 @@
       .then(function () { sync.busy = false; render(); });
   }
 
+  /* ---- activity ----
+     Events are re-derived from the local log on every sync rather than fired
+     at the moment they happen, because the moment they happen you are usually
+     in a basement with no signal. dedup_key makes that idempotent, and only
+     the last two weeks are emitted so the payload stays bounded. */
+  var EVENT_WINDOW_DAYS = 14;
+
+  function withinWindow(date) {
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - EVENT_WINDOW_DAYS);
+    return date >= cutoff.toISOString().slice(0, 10);
+  }
+
+  function eventRows() {
+    var out = [], seen = {};
+    function add(type, key, payload, at) {
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({
+        user_id: auth.user_id, type: type, dedup_key: key,
+        payload: payload, created_at: new Date(at || Date.now()).toISOString()
+      });
+    }
+
+    for (var k in state.sessions) {
+      var s = state.sessions[k];
+      if (!withinWindow(s.date) || doneCount(s) === 0) continue;
+      var base = { day: s.dayName, unit: state.unit };
+      add("workout_started", "start:" + s.key, base, s.startedAt);
+      if (s.finished) {
+        add("workout_finished", "finish:" + s.key,
+            { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit },
+            s.finishedAt || s.startedAt);
+        recordsIn(s).forEach(function (r) {
+          add("pr", ["pr", r.name, s.date, r.w, r.r].join(":"),
+              { exercise: r.name, weight: r.w, reps: r.r, per_hand: !!r.each,
+                e1rm: Math.round(r.e1rm * 10) / 10, unit: state.unit },
+              s.finishedAt || s.startedAt);
+        });
+      }
+    }
+
+    for (var date in state.fuel.days) {
+      if (!withinWindow(date)) continue;
+      METRICS.forEach(function (m) {
+        if (!fuelHit(date, m.id)) return;
+        add("goal_hit", ["goal", m.id, date].join(":"),
+            { metric: m.id, name: m.name, total: fuelNum(m, fuelTotal(date, m.id)),
+              target: fuelNum(m, state.fuel.targets[m.id]), unit: m.unit },
+            Date.parse(date + "T12:00:00"));
+      });
+    }
+    return out;
+  }
+
+  /* Events are immutable — a repeat is dropped, never rewritten. */
+  function pushEvents() {
+    var rows = eventRows();
+    if (!rows.length) return Promise.resolve();
+    return api("/rest/v1/events?on_conflict=user_id,dedup_key", {
+      method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: rows
+    });
+  }
+
+  /* ---- friends ---- */
+  function otherSide(link) { return link.requester === auth.user_id ? link.addressee : link.requester; }
+  function iAmRequester(link) { return link.requester === auth.user_id; }
+  function iShareWith(link) { return iAmRequester(link) ? link.requester_shares_detail : link.addressee_shares_detail; }
+  function theyShareWithMe(link) { return iAmRequester(link) ? link.addressee_shares_detail : link.requester_shares_detail; }
+
+  function loadSocial() {
+    if (!auth) return Promise.resolve();
+    social.busy = true;
+    social.error = null;
+    if (ui.view === "friends") render();
+
+    return withSession()
+      .then(function () {
+        return Promise.all([
+          api("/rest/v1/friendships?select=*"),
+          api("/rest/v1/events?select=*&order=created_at.desc&limit=60"),
+          api("/rest/v1/profiles?select=id,handle,display_name")
+        ]);
+      })
+      .then(function (res) {
+        state.social.links = res[0] || [];
+        state.social.feed = res[1] || [];
+        var people = {};
+        (res[2] || []).forEach(function (p) { people[p.id] = p; });
+        state.social.people = people;
+        state.social.fetchedAt = Date.now();
+        save();
+      })
+      .catch(function (err) { social.error = err.message; })
+      .then(function () { social.busy = false; if (ui.view === "friends") render(); });
+  }
+
+  function nameOf(id) {
+    if (id === (auth && auth.user_id)) return "You";
+    var p = state.social.people[id];
+    return p ? "@" + p.handle : "someone";
+  }
+
+  function addFriend(handle) {
+    social.error = null;
+    return withSession()
+      .then(function () { return api("/rest/v1/rpc/find_profile", { method: "POST", body: { handle_input: handle } }); })
+      .then(function (rows) {
+        if (!rows || !rows.length) throw new Error("No one is using the handle @" + handle + ".");
+        return api("/rest/v1/friendships", {
+          method: "POST", prefer: "return=minimal",
+          body: { requester: auth.user_id, addressee: rows[0].id }
+        }).catch(function (err) {
+          throw new Error(err.status === 409 ? "You have already sent @" + handle + " a request." : err.message);
+        });
+      })
+      .then(loadSocial)
+      .catch(function (err) { social.error = err.message; render(); });
+  }
+
+  function patchLink(id, body) {
+    return withSession()
+      .then(function () {
+        return api("/rest/v1/friendships?id=eq." + id, { method: "PATCH", prefer: "return=minimal", body: body });
+      })
+      .then(loadSocial)
+      .catch(function (err) { social.error = err.message; render(); });
+  }
+
+  function dropLink(id) {
+    return withSession()
+      .then(function () { return api("/rest/v1/friendships?id=eq." + id, { method: "DELETE", prefer: "return=minimal" }); })
+      .then(loadSocial)
+      .catch(function (err) { social.error = err.message; render(); });
+  }
+
+  function openFriend(id) {
+    ui.friend = id;
+    social.friendData = null;
+    social.error = null;
+    render();
+    return withSession()
+      .then(function () {
+        return Promise.all([
+          api("/rest/v1/sessions?user_id=eq." + id + "&select=*&order=date.desc&limit=12"),
+          api("/rest/v1/prs?user_id=eq." + id + "&select=*&order=achieved_on.desc&limit=8"),
+          api("/rest/v1/session_details?user_id=eq." + id + "&select=*")
+        ]);
+      })
+      .then(function (res) {
+        var detail = {};
+        (res[2] || []).forEach(function (d) { detail[d.session_id] = d.entries || {}; });
+        social.friendData = { sessions: res[0] || [], prs: res[1] || [], detail: detail };
+      })
+      .catch(function (err) { social.error = err.message; })
+      .then(render);
+  }
+
   function repaintIfData() { if (ui.view === "data") render(); }
 
   var autoSyncTimer = null;
@@ -2229,6 +2480,229 @@
     if (mins < 60) return "Synced " + mins + " min ago";
     if (mins < 1440) return "Synced " + Math.floor(mins / 60) + "h ago";
     return "Synced " + Math.floor(mins / 1440) + "d ago";
+  }
+
+  var EVENT_LOOK = {
+    workout_started:  { color: "var(--plate-blue)",  icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' },
+    workout_finished: { color: "var(--plate-green)", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' },
+    pr:               { color: "var(--plate-yellow)", icon: STAR },
+    goal_hit:         { color: "var(--met-water)",   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>' }
+  };
+
+  function ago(iso) {
+    var mins = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+    if (mins < 1) return "now";
+    if (mins < 60) return mins + "m";
+    if (mins < 1440) return Math.floor(mins / 60) + "h";
+    return Math.floor(mins / 1440) + "d";
+  }
+
+  function feedLine(ev) {
+    var who = "<b>" + esc(nameOf(ev.user_id)) + "</b>";
+    var p = ev.payload || {};
+    if (ev.type === "workout_started") return who + " started " + esc(p.day || "a workout");
+    if (ev.type === "workout_finished") return who + " finished " + esc(p.day || "a workout");
+    if (ev.type === "pr") return who + " set a record on " + esc(p.exercise || "a lift");
+    if (ev.type === "goal_hit") return who + " hit their " + esc((p.name || "").toLowerCase() || "daily") + " goal";
+    return who + " did something";
+  }
+
+  function feedSub(ev) {
+    var p = ev.payload || {};
+    if (ev.type === "workout_finished") {
+      return p.sets + " sets · " + Number(p.volume || 0).toLocaleString() + " " + esc(p.unit || "kg");
+    }
+    if (ev.type === "pr") {
+      return esc(p.weight) + " × " + esc(p.reps) + (p.per_hand ? " per hand" : "") +
+             (p.e1rm ? " · est. 1RM " + esc(p.e1rm) + " " + esc(p.unit || "kg") : "");
+    }
+    if (ev.type === "goal_hit") return esc(p.total) + " / " + esc(p.target) + " " + esc(p.unit || "");
+    return "";
+  }
+
+  function friendsHTML() {
+    if (!auth) {
+      return '<div class="sheet-head"><div><div class="eyebrow">Friends</div><h1>Better together</h1></div></div>' +
+        '<div class="empty"><b>Sign in first</b>Friends hang off your account. Create one under Data and pick a handle — that handle is how people find you.</div>';
+    }
+    if (!auth.handle) {
+      return '<div class="sheet-head"><div><div class="eyebrow">Friends</div><h1>Pick a handle</h1></div></div>' +
+        '<div class="empty"><b>You need a handle first</b>Set one under Data. It is how friends search for you.</div>';
+    }
+    if (ui.friend) return friendDetailHTML();
+
+    var links = state.social.links || [];
+    var incoming = links.filter(function (l) { return l.status === "pending" && l.addressee === auth.user_id; });
+    var outgoing = links.filter(function (l) { return l.status === "pending" && l.requester === auth.user_id; });
+    var accepted = links.filter(function (l) { return l.status === "accepted"; });
+
+    var err = social.error ? '<div class="warn">' + esc(social.error) + "</div>" : "";
+
+    var add =
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Add someone</div>' +
+        '<div class="custom">' +
+          '<input class="f" id="friendHandle" placeholder="their handle" autocapitalize="none" aria-label="Friend handle">' +
+          '<button class="btn day" data-addfriend>Send</button>' +
+        "</div>" +
+        '<p class="hint">You are <b class="num">@' + esc(auth.handle) + "</b> — that is what they type in.</p>" +
+      "</div></section>";
+
+    var requests = incoming.length
+      ? '<section class="card">' + incoming.map(function (l) {
+          var id = otherSide(l);
+          return '<div class="who">' +
+            '<span class="avatar">' + esc((nameOf(id).replace("@", "")[0]) || "?") + "</span>" +
+            '<span class="who-main"><b>' + esc(nameOf(id)) + "</b><span>wants to be friends</span></span>" +
+            '<span class="who-acts">' +
+              '<button class="btn sm day" data-accept="' + esc(l.id) + '">Accept</button>' +
+              '<button class="btn sm" data-decline="' + esc(l.id) + '">Ignore</button>' +
+            "</span></div>";
+        }).join("") + "</section>"
+      : "";
+
+    var list = accepted.length
+      ? accepted.map(function (l) {
+          var id = otherSide(l);
+          var sharing = iShareWith(l);
+          return '<section class="card">' +
+            '<button class="who" data-openfriend="' + esc(id) + '" style="width:100%;border:0;background:var(--surface);text-align:left;font:inherit;cursor:pointer">' +
+              '<span class="avatar">' + esc((nameOf(id).replace("@", "")[0]) || "?") + "</span>" +
+              '<span class="who-main"><b>' + esc(nameOf(id)) + "</b><span>" +
+                (theyShareWithMe(l) ? "shares full detail with you" : "shares summaries with you") + "</span></span>" +
+              '<span class="who-acts"><span class="feed-when">View ›</span></span>' +
+            "</button>" +
+            '<div class="share-row">' +
+              "<span>Let " + esc(nameOf(id)) + " see your individual sets and weights</span>" +
+              '<button class="switch" data-share="' + esc(l.id) + '" aria-pressed="' + sharing +
+                '" aria-label="Share full detail with ' + esc(nameOf(id)) + '"></button>' +
+            "</div>" +
+            '<div class="share-row" style="background:none;border-top:0;padding-top:0">' +
+              '<button class="btn sm danger" data-unfriend="' + esc(l.id) + '">Remove friend</button>' +
+            "</div>" +
+          "</section>";
+        }).join("")
+      : '<div class="empty"><b>No friends yet</b>Send someone your handle and add theirs above.</div>';
+
+    var pendingOut = outgoing.length
+      ? '<p class="hint" style="padding-left:2px">Waiting on ' +
+        outgoing.map(function (l) { return esc(nameOf(otherSide(l))); }).join(", ") + " to accept.</p>"
+      : "";
+
+    var feed = (state.social.feed || []).length
+      ? '<section class="card">' + state.social.feed.map(function (ev) {
+          var look = EVENT_LOOK[ev.type] || EVENT_LOOK.workout_finished;
+          var sub = feedSub(ev);
+          return '<div class="feed-item" style="--e: ' + look.color + '">' +
+            '<span class="feed-ico">' + look.icon + "</span>" +
+            '<span class="feed-body"><span class="feed-line">' + feedLine(ev) + "</span>" +
+              (sub ? '<div class="feed-sub">' + sub + "</div>" : "") + "</span>" +
+            '<span class="feed-when">' + esc(ago(ev.created_at)) + "</span>" +
+          "</div>";
+        }).join("") + "</section>"
+      : '<div class="empty"><b>Nothing yet</b>Finished workouts, records and hit goals show up here — yours and your friends\'.</div>';
+
+    return '<div class="sheet-head"><div><div class="eyebrow">' +
+        (accepted.length ? accepted.length + " friend" + (accepted.length === 1 ? "" : "s") : "Friends") +
+        '</div><h1>Activity</h1></div>' +
+      '<button class="btn" data-refreshfeed' + (social.busy ? " disabled" : "") + ">" +
+        (social.busy ? "Refreshing…" : "Refresh") + "</button></div>" +
+      err + requests + feed + add + pendingOut + list;
+  }
+
+  function friendDetailHTML() {
+    var id = ui.friend;
+    var link = (state.social.links || []).filter(function (l) {
+      return l.status === "accepted" && otherSide(l) === id;
+    })[0];
+    var d = social.friendData;
+
+    var head = '<div class="sheet-head"><div><div class="eyebrow">Friend</div><h1>' + esc(nameOf(id)) + "</h1></div>" +
+      '<button class="btn" data-closefriend>Back</button></div>';
+
+    if (social.error) return head + '<div class="warn">' + esc(social.error) + "</div>";
+    if (!d) return head + '<div class="empty">Loading…</div>';
+
+    var canSeeDetail = link && theyShareWithMe(link);
+
+    var prs = d.prs.length
+      ? '<section class="card"><div class="fuel-card"><div class="lab">Recent records</div>' +
+          d.prs.map(function (r) {
+            return '<div class="hist-ex"><span class="hist-name">' + esc(r.exercise) +
+              (r.per_hand ? "<em>per hand</em>" : "") + "</span>" +
+              '<span class="hist-sets"><i>' + esc(r.weight) + "×" + esc(r.reps) + "</i></span></div>";
+          }).join("") +
+        "</div></section>"
+      : "";
+
+    var sessions = d.sessions.length
+      ? d.sessions.map(function (s) {
+          var entries = d.detail[s.id];
+          var body = "";
+          if (canSeeDetail && entries && Object.keys(entries).length) {
+            body = '<div class="hist-body">' + Object.keys(entries).map(function (k) {
+              var e = entries[k];
+              return '<div class="hist-ex"><span class="hist-name">' + esc(e.name) +
+                (e.each ? "<em>per hand</em>" : "") + "</span>" +
+                '<span class="hist-sets">' + (e.sets || []).map(function (x) {
+                  return "<i>" + esc(x.w || "–") + "×" + esc(x.r || "–") + "</i>";
+                }).join("") + "</span></div>";
+            }).join("") + "</div>";
+          } else if (!canSeeDetail) {
+            body = '<div class="share-row"><span>' + esc(nameOf(id)) +
+              " shares summaries only — individual sets stay private unless they turn detail on for you.</span></div>";
+          }
+          return '<section class="card" style="--c: var(--plate-' + (s.color || "blue") + ')">' +
+            '<div class="hist"><span class="bar"></span>' +
+              '<span class="hist-main"><b>' + esc(s.day_name) + '</b><span class="hist-sub">' +
+                esc(prettyDate(s.date)) + " · " + s.sets_done + " sets</span></span>" +
+              '<span class="hist-vol"><b>' + Math.round(s.volume).toLocaleString() + "</b><span>" + esc(s.unit) + "</span></span>" +
+            "</div>" + body + "</section>";
+        }).join("")
+      : '<div class="empty"><b>Nothing logged yet</b>Their sessions will show up here.</div>';
+
+    return head + prs + sessions;
+  }
+
+  function handleFriendsClick(t) {
+    if (t.closest("[data-refreshfeed]")) { loadSocial(); return; }
+
+    if (t.closest("[data-addfriend]")) {
+      var input = document.getElementById("friendHandle");
+      var h = ((input && input.value) || "").trim().toLowerCase().replace(/^@/, "");
+      if (!h) { if (input) input.focus(); return; }
+      addFriend(h);
+      return;
+    }
+
+    var acc = t.closest("[data-accept]");
+    if (acc) { patchLink(acc.dataset.accept, { status: "accepted" }); return; }
+
+    var dec = t.closest("[data-decline]");
+    if (dec) { dropLink(dec.dataset.decline); return; }
+
+    var un = t.closest("[data-unfriend]");
+    if (un) {
+      if (!confirm("Remove this friend? They stop seeing your activity immediately.")) return;
+      dropLink(un.dataset.unfriend);
+      return;
+    }
+
+    var sh = t.closest("[data-share]");
+    if (sh) {
+      var link = (state.social.links || []).filter(function (l) { return l.id === sh.dataset.share; })[0];
+      if (!link) return;
+      var next = !iShareWith(link);
+      var body = {};
+      body[iAmRequester(link) ? "requester_shares_detail" : "addressee_shares_detail"] = next;
+      patchLink(link.id, body);
+      return;
+    }
+
+    var open = t.closest("[data-openfriend]");
+    if (open) { openFriend(open.dataset.openfriend); return; }
+
+    if (t.closest("[data-closefriend]")) { ui.friend = null; social.friendData = null; render(); return; }
   }
 
   function accountHTML() {
@@ -2281,7 +2755,7 @@
       sync.busy = true;
       render();
       (creating ? signUp(email.trim(), pass) : signIn(email.trim(), pass))
-        .then(function () { sync.busy = false; render(); return syncNow(true); })
+        .then(function () { sync.busy = false; render(); return syncNow(true).then(loadSocial); })
         .catch(function (err) { sync.busy = false; sync.error = err.message; render(); });
       return true;
     }

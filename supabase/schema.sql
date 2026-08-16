@@ -66,6 +66,19 @@ language sql stable security definer set search_path = public as $$
   );
 $$;
 
+-- Weaker than is_friend: any connection at all, accepted or still pending.
+-- An incoming request has to show WHO it is from, and until it is accepted the
+-- two of you are not friends yet.
+create or replace function public.knows(other uuid)
+returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from friendships f
+    where (f.requester = auth.uid() and f.addressee = other)
+       or (f.addressee = auth.uid() and f.requester = other)
+  );
+$$;
+
 -- Adding a friend needs a handle lookup, but the profiles table itself stays
 -- closed so the whole user list cannot be enumerated. Exact match only.
 create or replace function public.find_profile(handle_input text)
@@ -156,6 +169,13 @@ create table if not exists public.push_subscriptions (
 -- Columns added after the first run. Safe on a fresh database too.
 alter table public.sessions add column if not exists day_id text;
 
+-- Activity is re-derived from the local log on every sync, so each event needs
+-- a stable identity or the feed fills up with copies of the same PR.
+alter table public.events add column if not exists dedup_key text;
+update public.events set dedup_key = 'legacy:' || id where dedup_key is null;
+alter table public.events alter column dedup_key set not null;
+create unique index if not exists events_dedup_idx on public.events (user_id, dedup_key);
+
 -- -------------------------------------------------------------------- indexes
 create index if not exists sessions_user_date_idx on public.sessions (user_id, date desc);
 create index if not exists fuel_days_user_date_idx on public.fuel_days (user_id, date desc);
@@ -175,10 +195,12 @@ alter table public.prs                enable row level security;
 alter table public.events             enable row level security;
 alter table public.push_subscriptions enable row level security;
 
--- profiles: yourself and your accepted friends; handle lookup goes via find_profile()
+-- profiles: yourself and anyone you have a friendship row with, pending
+-- included, so a request can show its sender. Everyone else stays invisible;
+-- finding someone new goes through find_profile().
 drop policy if exists profiles_read on public.profiles;
 create policy profiles_read on public.profiles for select to authenticated
-  using (id = auth.uid() or public.is_friend(id));
+  using (id = auth.uid() or public.knows(id));
 
 drop policy if exists profiles_write on public.profiles;
 create policy profiles_write on public.profiles for insert to authenticated
