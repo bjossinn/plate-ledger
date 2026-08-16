@@ -368,17 +368,62 @@
   .edit-tools .btn { flex: 1; }
 
   /* ---- history ---- */
-  .hist { width: 100%; border: 0; background: var(--surface); text-align: left; font: inherit; padding: 13px 14px; cursor: pointer; display: flex; gap: 12px; align-items: center; }
-  .hist .bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); flex: 0 0 auto; }
-  .hist-main { flex: 1; min-width: 0; }
-  .hist-main b { display: block; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
-  .hist-main span { font-size: 12px; color: var(--muted); }
-  .hist-vol { text-align: right; font-size: 13px; font-weight: 700; }
-  .hist-vol span { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
-  .hist-body { border-top: 1px solid var(--line); padding: 11px 14px 13px; display: flex; flex-direction: column; gap: 9px; }
-  .hist-ex { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; align-items: baseline; }
-  .hist-ex b { font-weight: 600; }
-  .hist-ex span { color: var(--muted); text-align: right; }
+  .hist {
+    width: 100%;
+    border: 0;
+    background: var(--surface);
+    text-align: left;
+    font: inherit;
+    padding: 13px 14px;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 4px 1fr auto;
+    gap: 12px;
+    align-items: center;
+  }
+  .hist .bar { align-self: stretch; border-radius: 2px; background: var(--c); }
+  .hist-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .hist-main > b { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .hist-sub { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .chip-live {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--c);
+    border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+  .hist-vol { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+  .hist-vol b {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+  }
+  .hist-vol span { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+
+  .hist-body { border-top: 1px solid var(--line); padding: 12px 14px 13px; display: flex; flex-direction: column; gap: 11px; }
+  .hist-ex { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start; }
+  .hist-name { font-size: 13px; font-weight: 600; align-self: center; }
+  .hist-name em { font-style: normal; color: var(--faint); font-weight: 600; font-size: 11px; margin-left: 6px; }
+  .hist-sets { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .hist-sets i {
+    font-style: normal;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 3px 0;
+    min-width: 68px;
+    text-align: center;
+  }
 
   /* ---- session complete ---- */
   .scrim {
@@ -508,6 +553,19 @@
   .timer span { font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
   .timer.running { background: var(--day); border-color: var(--day); color: #fff; }
   .timer.running span { color: rgba(255,255,255,.8); }
+  .timer.save { background: var(--day); border-color: var(--day); color: #fff; }
+  .timer.save b { font-family: inherit; font-size: 15px; letter-spacing: -.01em; }
+  .timer.save span { color: rgba(255,255,255,.85); }
+
+  .btn.finish {
+    width: 100%;
+    padding: 15px;
+    font-size: 14px;
+    color: var(--day);
+    border-color: color-mix(in srgb, var(--day) 45%, var(--line));
+    background: color-mix(in srgb, var(--day) 9%, var(--surface));
+  }
+  .per-hand { color: var(--faint); font-weight: 600; }
 
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -549,6 +607,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
+  var VERSION = "1.3.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -576,9 +635,9 @@
       { id: "d1", name: "Upper A", color: "blue", ex: [
         { id: "d1e1", name: "Barbell Bench Press", sets: 3, reps: "6–8", note: "", rest: HEAVY },
         { id: "d1e2", name: "Chest-Supported Row", sets: 3, reps: "8–10", note: "", rest: HEAVY },
-        { id: "d1e3", name: "Incline Dumbbell Press", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d1e3", name: "Incline Dumbbell Press", sets: 3, reps: "8–12", note: "", rest: HEAVY, each: true },
         { id: "d1e4", name: "Lat Pulldown", sets: 3, reps: "8–12", note: "", rest: HEAVY },
-        { id: "d1e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT },
+        { id: "d1e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT, each: true },
         { id: "d1e6", name: "Cable Triceps Pushdown", sets: 2, reps: "10–15", note: "", rest: LIGHT },
         { id: "d1e7", name: "Dumbbell / Cable Curl", sets: 2, reps: "10–15", note: "", rest: LIGHT }
       ]},
@@ -595,7 +654,7 @@
         { id: "d3e2", name: "Pull-Ups / Lat Pulldown", sets: 3, reps: "8–12", note: "", rest: HEAVY },
         { id: "d3e3", name: "Machine or DB Chest Press", sets: 3, reps: "8–12", note: "", rest: HEAVY },
         { id: "d3e4", name: "Seated Cable Row", sets: 3, reps: "8–12", note: "", rest: HEAVY },
-        { id: "d3e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT },
+        { id: "d3e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT, each: true },
         { id: "d3e6", name: "Overhead Triceps Extension", sets: 2, reps: "10–15", note: "", rest: LIGHT },
         { id: "d3e7", name: "Preacher / Hammer Curl", sets: 2, reps: "10–15", note: "", rest: LIGHT }
       ]},
@@ -610,14 +669,32 @@
     ];
   }
 
-  /* Programs saved before rest was per-exercise carry no rest field — fill it in. */
+  /* Fill in fields added after a program was first saved. */
   function normalize(program) {
     program.forEach(function (day) {
       day.ex.forEach(function (ex) {
         if (typeof ex.rest !== "number") ex.rest = defaultRest(ex.name);
+        ex.each = ex.each === true;
       });
     });
     return program;
+  }
+
+  /* Sessions gained a key, a start time and a finished flag. Anything logged
+     before that is closed out, except today's, which you may still be mid-way
+     through. Entries keep whatever weight convention they were logged under. */
+  function normalizeSessions(sessions) {
+    var today = todayKey();
+    for (var k in sessions) {
+      var s = sessions[k];
+      if (!s.key) s.key = k;
+      if (typeof s.startedAt !== "number") s.startedAt = 0;
+      if (typeof s.finished !== "boolean") s.finished = s.date !== today;
+      for (var id in s.entries) {
+        if (s.entries[id].each !== true) s.entries[id].each = false;
+      }
+    }
+    return sessions;
   }
 
   function defaultState() {
@@ -627,6 +704,7 @@
       sessions: {},
       unit: "kg",
       rest: 120,
+      theme: "system",
       day: "d1"
     };
   }
@@ -644,9 +722,10 @@
         state = {
           v: 1,
           program: normalize(saved.program),
-          sessions: saved.sessions,
+          sessions: normalizeSessions(saved.sessions),
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
+          theme: saved.theme || "system",
           day: saved.day || saved.program[0].id
         };
       }
@@ -699,30 +778,47 @@
     return state.program[0];
   }
 
-  function sessionKey(date, dayId) { return date + "__" + dayId; }
+  /* Later of two sessions. Same-day repeats are told apart by start time. */
+  function isLater(a, b) {
+    if (!b) return true;
+    if (a.date !== b.date) return a.date > b.date;
+    return (a.startedAt || 0) > (b.startedAt || 0);
+  }
 
+  /* The open session for today's selected day, or a fresh one. Finishing a
+     workout closes the current session, so the same day can be logged twice. */
   function currentSession() {
     var day = getDay(state.day);
-    var k = sessionKey(todayKey(), day.id);
-    if (!state.sessions[k]) {
-      state.sessions[k] = { date: todayKey(), dayId: day.id, dayName: day.name, color: day.color, entries: {} };
+    var today = todayKey();
+    var found = null;
+    for (var k in state.sessions) {
+      var s = state.sessions[k];
+      if (s.date === today && s.dayId === day.id && !s.finished) { found = s; break; }
     }
-    var s = state.sessions[k];
-    s.dayName = day.name;
-    s.color = day.color;
-    return s;
+    if (!found) {
+      var key = today + "__" + day.id + "__" + Date.now().toString(36);
+      found = {
+        key: key, date: today, dayId: day.id, dayName: day.name, color: day.color,
+        startedAt: Date.now(), finished: false, entries: {}
+      };
+      state.sessions[key] = found;
+    }
+    found.dayName = day.name;
+    found.color = day.color;
+    return found;
   }
 
   function entryFor(session, ex) {
-    if (!session.entries[ex.id]) session.entries[ex.id] = { name: ex.name, sets: [] };
+    if (!session.entries[ex.id]) session.entries[ex.id] = { name: ex.name, sets: [], each: !!ex.each };
     var e = session.entries[ex.id];
     e.name = ex.name;
+    e.each = !!ex.each;
     while (e.sets.length < ex.sets) e.sets.push({ w: "", r: "", done: false });
     return e;
   }
 
   function lastFor(exId, exceptKey) {
-    var best = null;
+    var best = null, bestSession = null;
     for (var k in state.sessions) {
       if (k === exceptKey) continue;
       var s = state.sessions[k];
@@ -730,19 +826,34 @@
       if (!e) continue;
       var done = e.sets.filter(function (x) { return x.done; });
       if (!done.length) continue;
-      if (!best || s.date > best.date) best = { date: s.date, sets: done };
+      if (isLater(s, bestSession)) { bestSession = s; best = { date: s.date, sets: done, each: e.each }; }
     }
     return best;
   }
 
+  /* A dumbbell exercise records the weight of one dumbbell, so both hands count. */
   function volumeOf(session) {
     var v = 0;
     for (var id in session.entries) {
-      session.entries[id].sets.forEach(function (s) {
-        if (s.done) v += (parseFloat(s.w) || 0) * (parseFloat(s.r) || 0);
+      var e = session.entries[id];
+      var mult = e.each ? 2 : 1;
+      e.sets.forEach(function (s) {
+        if (s.done) v += (parseFloat(s.w) || 0) * (parseFloat(s.r) || 0) * mult;
       });
     }
     return v;
+  }
+
+  function plannedSets(day, session) {
+    return day.ex.reduce(function (a, ex) {
+      var e = session.entries[ex.id];
+      return a + Math.max(ex.sets, e ? e.sets.length : 0);
+    }, 0);
+  }
+
+  function allDone(day, session) {
+    var planned = plannedSets(day, session);
+    return planned > 0 && doneCount(session) >= planned;
   }
 
   function doneCount(session) {
@@ -756,6 +867,13 @@
   var timerEl = document.getElementById("timer");
 
   function paintTimer() {
+    /* Every set ticked: there is nothing left to rest for, so the button
+       becomes the way to close the workout out. */
+    if (ui.view === "train" && !ui.edit && allDone(getDay(state.day), currentSession())) {
+      timerEl.className = "timer save";
+      timerEl.innerHTML = "<b>Save</b><span>workout</span>";
+      return;
+    }
     if (!timerEnd) {
       timerEl.className = "timer";
       timerEl.innerHTML = "<b>" + fmtRest(timerLen || state.rest) + "</b><span>Rest</span>";
@@ -785,6 +903,7 @@
   }
 
   timerEl.addEventListener("click", function () {
+    if (timerEl.classList.contains("save")) { finishWorkout(); return; }
     if (timerEnd) stopTimer(); else startTimer();
   });
 
@@ -837,7 +956,7 @@
     }
     var day = getDay(state.day);
     var s = currentSession();
-    var planned = day.ex.reduce(function (a, e) { return a + Math.max(e.sets, (s.entries[e.id] || { sets: [] }).sets.length); }, 0);
+    var planned = plannedSets(day, s);
     var d = doneCount(s);
     label.textContent = d + " of " + planned + " sets";
     vol.textContent = Math.round(volumeOf(s)).toLocaleString() + " " + state.unit;
@@ -871,9 +990,11 @@
   /* ---------- train view ---------- */
   var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 
+  function unitLabel(ex) { return ex.each ? state.unit + " / hand" : state.unit; }
+
   function trainHTML(day) {
     var s = currentSession();
-    var key = sessionKey(todayKey(), day.id);
+    var key = s.key;
     var cards = day.ex.map(function (ex) {
       var e = entryFor(s, ex);
       var last = lastFor(ex.id, key);
@@ -885,7 +1006,8 @@
           }).join(", ") + "</div>";
       }
       var rows = e.sets.map(function (st, i) {
-        var prefill = last && last.sets[i] ? last.sets[i].w : "";
+        /* only carry a weight forward if it was logged the same way */
+        var prefill = last && last.sets[i] && last.each === !!ex.each ? last.sets[i].w : "";
         return '<div class="row' + (st.done ? " done" : "") + '" data-ex="' + ex.id + '" data-i="' + i + '">' +
           '<div class="idx num">' + (i + 1) + "</div>" +
           '<input type="number" inputmode="decimal" step="any" data-f="w" value="' + esc(st.w) + '" placeholder="' + esc(prefill || state.unit) + '" aria-label="Weight, set ' + (i + 1) + '">' +
@@ -903,7 +1025,7 @@
           lastLine +
         "</div></div>" +
         '<div class="rows">' +
-          '<div class="colhead"><span>Set</span><span>' + state.unit + "</span><span>Reps</span><span>Done</span></div>" +
+          '<div class="colhead"><span>Set</span><span>' + esc(unitLabel(ex)) + "</span><span>Reps</span><span>Done</span></div>" +
           rows +
           '<div class="row-tools">' +
             '<button class="btn sm" data-addset="' + ex.id + '">+ Set</button>' +
@@ -916,7 +1038,8 @@
 
     return warn +
       '<div class="sheet-head"><div><div class="eyebrow">Day ' + (state.program.indexOf(day) + 1) + " of " + state.program.length + "</div><h1>" + esc(day.name) + "</h1></div>" +
-      '<button class="btn" data-edit>Edit</button></div>' + cards;
+      '<button class="btn" data-edit>Edit</button></div>' + cards +
+      '<button class="btn finish" data-finish>Finish workout</button>';
   }
 
   /* ---------- train interactions (no full re-render on typing) ---------- */
@@ -951,7 +1074,6 @@
       var st = e.sets[Number(row.dataset.i)];
       var wIn = row.querySelector('[data-f="w"]');
       var rIn = row.querySelector('[data-f="r"]');
-      var finished = false;
       st.done = !st.done;
       if (st.done) {
         if (!st.w && wIn.placeholder && wIn.placeholder !== state.unit) { st.w = wIn.placeholder; wIn.value = st.w; }
@@ -959,18 +1081,14 @@
           var lo = String(ex.reps).match(/\d+/);
           if (lo) { st.r = lo[0]; rIn.value = st.r; }
         }
-        /* Last set of the last exercise: nothing left to rest for. */
-        var dayNow = getDay(state.day);
-        finished = dayNow.ex.length > 0 &&
-          ex.id === dayNow.ex[dayNow.ex.length - 1].id &&
-          Number(row.dataset.i) === e.sets.length - 1;
-        if (finished) stopTimer(); else startTimer(restOf(ex));
+        /* Rest only while sets remain. */
+        if (allDone(getDay(state.day), s)) stopTimer(); else startTimer(restOf(ex));
       }
       row.classList.toggle("done", st.done);
       tick.setAttribute("aria-pressed", String(st.done));
       save();
       updateProgress();
-      if (finished && !s.celebrated) celebrate(s);
+      paintTimer();
       return;
     }
 
@@ -992,6 +1110,7 @@
       return;
     }
 
+    if (t.closest("[data-finish]")) { finishWorkout(); return; }
     if (t.closest("[data-edit]")) { ui.edit = true; render(); return; }
     if (t.closest("[data-doneedit]")) { ui.edit = false; render(); return; }
 
@@ -1016,6 +1135,11 @@
         '<div class="segs">' + REST_CHOICES.map(function (r) {
           return '<button class="btn sm" data-exrest="' + r + '" aria-pressed="' + (restOf(ex) === r) + '">' + fmtRest(r) + "</button>";
         }).join("") + "</div>" +
+        '<div class="lab">Weight entered as</div>' +
+        '<div class="segs">' +
+          '<button class="btn sm" data-exeach="0" aria-pressed="' + (!ex.each) + '">Total lifted</button>' +
+          '<button class="btn sm" data-exeach="1" aria-pressed="' + (!!ex.each) + '">Per dumbbell</button>' +
+        "</div>" +
         '<div class="edit-tools">' +
           '<button class="btn sm" data-move="up" ' + (i === 0 ? "disabled" : "") + ">↑</button>" +
           '<button class="btn sm" data-move="down" ' + (i === day.ex.length - 1 ? "disabled" : "") + ">↓</button>" +
@@ -1066,6 +1190,14 @@
       return;
     }
 
+    var xe = t.closest("[data-exeach]");
+    if (xe) {
+      var wrapE = xe.closest("[data-ex]");
+      var exE = day.ex.filter(function (x) { return x.id === wrapE.dataset.ex; })[0];
+      if (exE) { exE.each = xe.dataset.exeach === "1"; save(); render(); }
+      return;
+    }
+
     var mv = t.closest("[data-move]");
     if (mv) {
       var idm = mv.closest("[data-ex]").dataset.ex;
@@ -1109,14 +1241,39 @@
     }
   }
 
-  /* ---------- session complete ---------- */
+  /* ---------- finishing a workout ---------- */
+  function finishWorkout() {
+    var day = getDay(state.day);
+    var s = currentSession();
+    var done = doneCount(s);
+
+    if (!done) {
+      alert("Nothing logged yet — tick at least one set before finishing " + day.name + ".");
+      return;
+    }
+
+    var left = plannedSets(day, s) - done;
+    if (left > 0) {
+      var msg = left === 1 ? "1 set isn't ticked." : left + " sets aren't ticked.";
+      if (!confirm(msg + "\n\nFinish " + day.name + " anyway? It goes to History as it stands.")) return;
+    }
+
+    s.finished = true;
+    s.finishedAt = Date.now();
+    save();
+    stopTimer();
+    timerDay = null;
+    render();      /* opens a fresh session for the same day */
+    showSummary(s);
+  }
+
   function prevSessionFor(dayId, exceptKey) {
     var best = null;
     for (var k in state.sessions) {
       if (k === exceptKey) continue;
       var s = state.sessions[k];
       if (s.dayId !== dayId || doneCount(s) === 0) continue;
-      if (!best || s.date > best.date) best = s;
+      if (isLater(s, best)) best = s;
     }
     return best;
   }
@@ -1129,11 +1286,8 @@
     return n;
   }
 
-  function celebrate(session) {
-    session.celebrated = true;
-    save();
-
-    var key = sessionKey(session.date, session.dayId);
+  function showSummary(session) {
+    var key = session.key;
     var vol = Math.round(volumeOf(session));
     var prev = prevSessionFor(session.dayId, key);
     var line;
@@ -1190,7 +1344,11 @@
   /* ---------- history ---------- */
   function historyHTML() {
     var keys = Object.keys(state.sessions).filter(function (k) { return doneCount(state.sessions[k]) > 0; });
-    keys.sort(function (a, b) { return state.sessions[b].date.localeCompare(state.sessions[a].date) || b.localeCompare(a); });
+    keys.sort(function (a, b) {
+      var A = state.sessions[a], B = state.sessions[b];
+      if (A.date !== B.date) return B.date.localeCompare(A.date);
+      return (B.startedAt || 0) - (A.startedAt || 0);
+    });
 
     if (!keys.length) {
       return '<div class="empty"><b>No sessions yet</b>Tick your first set on the Train tab and it lands here.</div>';
@@ -1201,23 +1359,36 @@
         var s = state.sessions[k];
         var open = ui.openSession === k;
         var body = "";
+
         if (open) {
           var lines = [];
           for (var id in s.entries) {
             var e = s.entries[id];
             var d = e.sets.filter(function (x) { return x.done; });
             if (!d.length) continue;
-            lines.push('<div class="hist-ex"><b>' + esc(e.name) + '</b><span class="num">' +
-              d.map(function (x) { return esc(x.w || "–") + "×" + esc(x.r || "–"); }).join(" · ") + "</span></div>");
+            lines.push(
+              '<div class="hist-ex">' +
+                '<span class="hist-name">' + esc(e.name) +
+                  (e.each ? "<em>per hand</em>" : "") + "</span>" +
+                '<span class="hist-sets">' + d.map(function (x) {
+                  return "<i>" + esc(x.w || "–") + "×" + esc(x.r || "–") + "</i>";
+                }).join("") + "</span>" +
+              "</div>"
+            );
           }
           body = '<div class="hist-body">' + lines.join("") +
             '<button class="btn sm danger" data-delsession="' + esc(k) + '">Delete this session</button></div>';
         }
+
         return '<section class="card">' +
           '<button class="hist" data-session="' + esc(k) + '" style="--c: var(--plate-' + (s.color || "blue") + ')">' +
             '<span class="bar"></span>' +
-            '<span class="hist-main"><b>' + esc(s.dayName) + "</b><span>" + esc(prettyDate(s.date)) + " · " + doneCount(s) + " sets</span></span>" +
-            '<span class="hist-vol num">' + Math.round(volumeOf(s)).toLocaleString() + "<span>" + state.unit + " volume</span></span>" +
+            '<span class="hist-main">' +
+              "<b>" + esc(s.dayName) + "</b>" +
+              '<span class="hist-sub">' + esc(prettyDate(s.date)) + " · " + doneCount(s) + " sets" +
+                (s.finished ? "" : '<span class="chip-live">In progress</span>') + "</span>" +
+            "</span>" +
+            '<span class="hist-vol"><b>' + Math.round(volumeOf(s)).toLocaleString() + "</b><span>" + esc(state.unit) + "</span></span>" +
           "</button>" + body + "</section>";
       }).join("");
   }
@@ -1250,6 +1421,14 @@
     var sessions = Object.keys(state.sessions).filter(function (k) { return doneCount(state.sessions[k]) > 0; }).length;
     return '<div class="sheet-head"><div><div class="eyebrow">Backup &amp; settings</div><h1>Data</h1></div></div>' +
       '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Appearance</div>' +
+        '<div class="segs">' + [["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(function (t) {
+          return '<button class="btn" data-theme="' + t[0] + '" aria-pressed="' + (state.theme === t[0]) + '">' + t[1] + "</button>";
+        }).join("") + "</div>" +
+        '<p class="hint">System follows whatever your phone is set to, including its night schedule.</p>' +
+      "</div></section>" +
+
+      '<section class="card"><div class="edit-card">' +
         '<div class="lab">Weight unit</div>' +
         '<div class="segs"><button class="btn" data-unit="kg" aria-pressed="' + (state.unit === "kg") + '">Kilograms</button>' +
         '<button class="btn" data-unit="lb" aria-pressed="' + (state.unit === "lb") + '">Pounds</button></div>' +
@@ -1271,6 +1450,12 @@
       "</div></section>" +
 
       '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Version</div>' +
+        '<p class="hint">You are running <b class="num">' + VERSION + '</b>. New versions install themselves in the background, but only take effect the next time you open the app — this button does it now.</p>' +
+        '<button class="btn" data-update>Check for updates</button>' +
+      "</div></section>" +
+
+      '<section class="card"><div class="edit-card">' +
         '<div class="lab">Reset</div>' +
         '<p class="hint">Puts the four-day upper/lower split back exactly as written. Your logged sessions are untouched.</p>' +
         '<button class="btn danger" data-resetprog>Reset program to default</button>' +
@@ -1278,7 +1463,37 @@
       "</div></section>";
   }
 
+  function applyTheme() {
+    if (state.theme === "light" || state.theme === "dark") {
+      document.documentElement.setAttribute("data-theme", state.theme);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+
   function handleDataClick(t) {
+    var th = t.closest("[data-theme]");
+    if (th) { state.theme = th.dataset.theme; applyTheme(); save(); render(); return; }
+
+    if (t.closest("[data-update]")) {
+      var ub = t.closest("[data-update]");
+      ub.textContent = "Checking…";
+      if (!("serviceWorker" in navigator)) { location.reload(); return; }
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) { location.reload(); return; }
+        reg.addEventListener("updatefound", function () {
+          var sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener("statechange", function () {
+            if (sw.state === "activated" || sw.state === "redundant") location.reload();
+          });
+        });
+        reg.update();
+        setTimeout(function () { ub.textContent = "Already up to date"; }, 4000);
+      }).catch(function () { ub.textContent = "Check failed — try again with a signal"; });
+      return;
+    }
+
     var u = t.closest("[data-unit]");
     if (u) { state.unit = u.dataset.unit; save(); render(); return; }
 
@@ -1314,9 +1529,10 @@
         state = {
           v: 1,
           program: normalize(parsed.program),
-          sessions: parsed.sessions,
+          sessions: normalizeSessions(parsed.sessions),
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
+          theme: parsed.theme || "system",
           day: parsed.day || parsed.program[0].id
         };
         save();
@@ -1353,6 +1569,7 @@
 
   /* ---------- go ---------- */
   load();
+  applyTheme();
   if (!getDay(state.day)) state.day = state.program[0].id;
   render();
 })();

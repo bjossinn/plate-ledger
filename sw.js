@@ -2,7 +2,7 @@
    Strategy: serve from cache immediately, refresh the cache in the background,
    so the app opens in a basement gym and still picks up updates next launch. */
 
-var CACHE = "plate-ledger-v4";
+var CACHE = "plate-ledger-1.3.0";
 var SHELL = [
   "./",
   "./index.html",
@@ -16,7 +16,10 @@ var SHELL = [
 self.addEventListener("install", function (event) {
   event.waitUntil(
     caches.open(CACHE)
-      .then(function (cache) { return cache.addAll(SHELL); })
+      /* cache: "reload" skips the HTTP cache, so an update really is the new file */
+      .then(function (cache) {
+        return cache.addAll(SHELL.map(function (url) { return new Request(url, { cache: "reload" }); }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });

@@ -14,10 +14,14 @@ installs as a standalone app and works offline once it has loaded the first time
 - Weight/reps entry per set with a tap-to-complete tick.
 - Per-exercise rest timers that start on their own — 3:00 after the compounds, 1:30 after
   isolation work, and adjustable per exercise.
+- Dumbbell lifts record the weight of *one* dumbbell; volume counts both hands.
 - "Last time" line under every exercise, and the weight box pre-fills with what you lifted before.
 - `+ Set` / `− Set` for the days you do more or less than planned.
+- **Finish workout** closes a session — from the button under the list at any point, or from the
+  bottom bar once every set is ticked. Finishing frees the day up to be logged again the same day.
 - Full program editing: rename, reorder, change sets and rep ranges, add notes, add or delete days.
 - History with per-session volume, expandable to every logged set.
+- Light/dark/system theme switch.
 
 ## Where the data lives
 
@@ -46,4 +50,12 @@ over HTTP rather than `file://`:
 python -m http.server 8000
 ```
 
-After changing any shell file, bump `CACHE` in `sw.js` so installed copies pick up the new version.
+## Releasing
+
+Installed copies serve from cache first and fetch the update in the background, so a new version
+lands on the *second* launch. **Data → Check for updates** forces it immediately.
+
+After changing any shell file, bump both:
+
+- `VERSION` in `index.html` — shown under Data, so you can tell what a phone is running
+- `CACHE` in `sw.js` — must change, or installed copies keep serving the old files
