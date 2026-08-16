@@ -701,7 +701,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.6.0";
+  var VERSION = "1.6.1";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -1786,7 +1786,7 @@
       '<section class="card"><div class="edit-card">' +
         '<div class="lab">Appearance</div>' +
         '<div class="segs">' + [["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(function (t) {
-          return '<button class="btn" data-theme="' + t[0] + '" aria-pressed="' + (state.theme === t[0]) + '">' + t[1] + "</button>";
+          return '<button class="btn" data-settheme="' + t[0] + '" aria-pressed="' + (state.theme === t[0]) + '">' + t[1] + "</button>";
         }).join("") + "</div>" +
         '<p class="hint">System follows whatever your phone is set to, including its night schedule.</p>' +
       "</div></section>" +
@@ -1837,8 +1837,10 @@
   function handleDataClick(t) {
     if (handleAccountClick(t)) return;
 
-    var th = t.closest("[data-theme]");
-    if (th) { state.theme = th.dataset.theme; applyTheme(); save(); render(); return; }
+    /* NOT [data-theme]: applyTheme() stamps that on <html>, so closest() would
+       match the document root from any click and swallow every other button. */
+    var th = t.closest("[data-settheme]");
+    if (th) { state.theme = th.dataset.settheme; applyTheme(); save(); render(); return; }
 
     if (t.closest("[data-update]")) {
       var ub = t.closest("[data-update]");
