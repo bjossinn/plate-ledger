@@ -767,7 +767,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.7.1";
+  var VERSION = "1.7.2";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2473,8 +2473,20 @@
   function queueSync() {
     if (!auth) return;
     if (autoSyncTimer) clearTimeout(autoSyncTimer);
+    /* short delay so a run of quick taps becomes one request */
     autoSyncTimer = setTimeout(function () { syncNow(true); }, 4000);
   }
+
+  /* A gym is the worst place to depend on a network, so the automatic sync
+     after a workout will often fail. Retry whenever the phone comes back:
+     signal returns, or the app is brought to the front. */
+  window.addEventListener("online", function () { if (auth) syncNow(true); });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible" || !auth) return;
+    syncNow(true);
+    if (ui.view === "friends") loadSocial();
+  });
 
   function syncStatus() {
     if (sync.busy) return "Syncing…";
@@ -2798,6 +2810,8 @@
   load();
   auth = loadAuth();
   applyTheme();
+  /* flush anything logged while offline since the app was last open */
+  if (auth) queueSync();
   if (!getDay(state.day)) state.day = state.program[0].id;
   render();
 })();
