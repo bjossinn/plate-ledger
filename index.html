@@ -681,7 +681,7 @@
   }
 
   /* ---------- rest timer ---------- */
-  var timerEnd = 0, timerTick = null, timerLen = 0;
+  var timerEnd = 0, timerTick = null, timerLen = 0, timerDay = null;
   var timerEl = document.getElementById("timer");
 
   function paintTimer() {
@@ -780,6 +780,16 @@
       b.setAttribute("aria-current", String(b.dataset.view === ui.view));
     });
     renderDays();
+
+    /* Before the first set of a day is ticked, the idle timer shows what that day
+       opens with. After that it follows whatever you last rested for. */
+    if (ui.view === "train" && !timerEnd) {
+      if (timerDay !== day.id || doneCount(currentSession()) === 0) {
+        timerLen = day.ex.length ? restOf(day.ex[0]) : state.rest;
+        timerDay = day.id;
+      }
+    }
+
     if (ui.view === "train") viewEl.innerHTML = ui.edit ? editHTML(day) : trainHTML(day);
     else if (ui.view === "history") viewEl.innerHTML = historyHTML();
     else viewEl.innerHTML = dataHTML();
