@@ -31,6 +31,20 @@ Water is stored in millilitres and shown in litres. Each metric is a stat tile w
 one value against one target — so identity never rests on colour alone; the hues are Okabe-Ito
 derived and validated per theme for colour-vision deficiency.
 
+### Account and sync
+
+Optional. Sign in under **Data** and the log is mirrored to Postgres (Supabase), so a lost
+phone is not a lost year. **Restore** pulls it back onto a fresh device and never overwrites
+a session that already exists locally — the phone in your hand wins. Signing out leaves the
+local log untouched; the cloud copy is a copy, not a migration.
+
+Sync is a full idempotent upsert keyed on `(user_id, client_key)`, not a change log. At this
+data volume a re-sync that *cannot* duplicate beats a delta that can drift.
+
+Schema and the security model: [supabase/schema.sql](supabase/schema.sql). The publishable key
+sits in this public repo by design — row-level security is the entire boundary, and it is
+tested by attacking it (see the two-tier sharing rules in that file).
+
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the

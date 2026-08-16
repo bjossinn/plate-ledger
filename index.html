@@ -701,7 +701,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.5.0";
+  var VERSION = "1.6.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -819,6 +819,7 @@
       program: defaultProgram(),
       sessions: {},
       fuel: defaultFuel(),
+      cloud: { lastSyncAt: null },
       unit: "kg",
       rest: 120,
       theme: "system",
@@ -841,6 +842,7 @@
           program: normalize(saved.program),
           sessions: normalizeSessions(saved.sessions),
           fuel: normalizeFuel(saved.fuel),
+          cloud: (saved.cloud && typeof saved.cloud === "object") ? saved.cloud : { lastSyncAt: null },
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
           theme: saved.theme || "system",
@@ -1584,6 +1586,7 @@
     fuelDay(todayKey())[id].push(amount);
     save();
     render();
+    queueSync();
   }
 
   /* ---------- finishing a workout ---------- */
@@ -1610,6 +1613,7 @@
     timerDay = null;
     render();      /* opens a fresh session for the same day */
     showSummary(s);
+    queueSync();
   }
 
   function prevSessionFor(dayId, exceptKey) {
@@ -1778,6 +1782,7 @@
   function dataHTML() {
     var sessions = Object.keys(state.sessions).filter(function (k) { return doneCount(state.sessions[k]) > 0; }).length;
     return '<div class="sheet-head"><div><div class="eyebrow">Backup &amp; settings</div><h1>Data</h1></div></div>' +
+      accountHTML() +
       '<section class="card"><div class="edit-card">' +
         '<div class="lab">Appearance</div>' +
         '<div class="segs">' + [["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(function (t) {
@@ -1830,6 +1835,8 @@
   }
 
   function handleDataClick(t) {
+    if (handleAccountClick(t)) return;
+
     var th = t.closest("[data-theme]");
     if (th) { state.theme = th.dataset.theme; applyTheme(); save(); render(); return; }
 
@@ -1889,6 +1896,7 @@
           program: normalize(parsed.program),
           sessions: normalizeSessions(parsed.sessions),
           fuel: normalizeFuel(parsed.fuel),
+          cloud: (parsed.cloud && typeof parsed.cloud === "object") ? parsed.cloud : { lastSyncAt: null },
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
           theme: parsed.theme || "system",
@@ -1926,8 +1934,384 @@
     box.select();
   }
 
+  /* ---------- cloud ----------
+     Hand-rolled rather than pulling the Supabase SDK off a CDN: the service
+     worker caches this page for offline use, and a CDN script would be the one
+     thing that breaks in a basement gym. The key below is publishable by
+     design — row-level security is what protects the data, not secrecy. */
+  var SUPABASE_URL = "https://kjaoltyumjmcunyvhmvb.supabase.co";
+  var SUPABASE_KEY = "sb_publishable_W6FZMbAqfJLRBVOekrDnmA_cv3mFMMY";
+  var AUTH_KEY = "plate-ledger-auth";
+
+  var auth = null;
+  var sync = { busy: false, error: null };
+
+  function loadAuth() {
+    if (!store) return null;
+    try { return JSON.parse(store.getItem(AUTH_KEY)); } catch (e) { return null; }
+  }
+
+  function saveAuth() {
+    if (!store) return;
+    if (auth) store.setItem(AUTH_KEY, JSON.stringify(auth));
+    else store.removeItem(AUTH_KEY);
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { apikey: SUPABASE_KEY, "Content-Type": "application/json" };
+    headers.Authorization = "Bearer " + (opts.anon ? SUPABASE_KEY : (auth && auth.access_token) || SUPABASE_KEY);
+    if (opts.prefer) headers.Prefer = opts.prefer;
+    return fetch(SUPABASE_URL + path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined
+    }).then(function (res) {
+      return res.text().then(function (txt) {
+        var data = null;
+        try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = txt; }
+        if (!res.ok) {
+          var msg = (data && (data.msg || data.message || data.error_description || data.error)) || ("Request failed (" + res.status + ")");
+          var err = new Error(msg);
+          err.status = res.status;
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  /* Access tokens last an hour; trade the refresh token in before they lapse. */
+  function withSession() {
+    if (!auth) return Promise.reject(new Error("Not signed in"));
+    if (auth.expires_at && Date.now() < auth.expires_at - 60000) return Promise.resolve();
+    return api("/auth/v1/token?grant_type=refresh_token", {
+      method: "POST", anon: true, body: { refresh_token: auth.refresh_token }
+    }).then(function (d) {
+      auth.access_token = d.access_token;
+      auth.refresh_token = d.refresh_token;
+      auth.expires_at = Date.now() + (d.expires_in || 3600) * 1000;
+      saveAuth();
+    });
+  }
+
+  function adoptSession(d) {
+    auth = {
+      access_token: d.access_token,
+      refresh_token: d.refresh_token,
+      expires_at: Date.now() + (d.expires_in || 3600) * 1000,
+      user_id: d.user.id,
+      email: d.user.email,
+      handle: ""
+    };
+    saveAuth();
+    return api("/rest/v1/profiles?id=eq." + auth.user_id + "&select=handle,display_name")
+      .then(function (rows) {
+        if (rows && rows.length) { auth.handle = rows[0].handle; saveAuth(); }
+      });
+  }
+
+  function signUp(email, password) {
+    return api("/auth/v1/signup", { method: "POST", anon: true, body: { email: email, password: password } })
+      .then(function (d) {
+        if (d && d.access_token) return adoptSession(d);
+        /* confirmation is on: no session until the link is clicked */
+        throw new Error("Account created — confirm the email, then sign in.");
+      });
+  }
+
+  function signIn(email, password) {
+    return api("/auth/v1/token?grant_type=password",
+               { method: "POST", anon: true, body: { email: email, password: password } })
+      .then(adoptSession);
+  }
+
+  function signOut() {
+    auth = null;
+    saveAuth();
+    render();
+  }
+
+  function claimHandle(handle) {
+    return withSession().then(function () {
+      return api("/rest/v1/profiles", {
+        method: "POST", prefer: "resolution=merge-duplicates,return=representation",
+        body: [{ id: auth.user_id, handle: handle, display_name: handle }]
+      });
+    }).then(function (rows) {
+      auth.handle = (rows && rows[0] && rows[0].handle) || handle;
+      saveAuth();
+    });
+  }
+
+  /* ---- what gets pushed ---- */
+  function syncableSessions() {
+    var out = [];
+    for (var k in state.sessions) {
+      var s = state.sessions[k];
+      if (s.finished && doneCount(s) > 0) out.push(s);
+    }
+    return out;
+  }
+
+  function sessionRow(s) {
+    return {
+      user_id: auth.user_id,
+      client_key: s.key,
+      day_id: s.dayId,
+      day_name: s.dayName,
+      color: s.color || null,
+      date: s.date,
+      started_at: s.startedAt ? new Date(s.startedAt).toISOString() : null,
+      finished_at: s.finishedAt ? new Date(s.finishedAt).toISOString() : null,
+      sets_done: doneCount(s),
+      volume: Math.round(volumeOf(s) * 100) / 100,
+      unit: state.unit
+    };
+  }
+
+  /* Opening a day creates an entry for every exercise on it, most of them
+     empty. Only what was actually logged is worth storing — or showing to a
+     friend who has been given detail access. */
+  function detailEntries(s) {
+    var out = {};
+    for (var id in s.entries) {
+      var e = s.entries[id];
+      var done = e.sets.filter(function (x) { return x.done; });
+      if (!done.length) continue;
+      out[id] = { name: e.name, each: !!e.each, sets: done };
+    }
+    return out;
+  }
+
+  function recordRows() {
+    var seen = {}, out = [];
+    for (var k in state.sessions) {
+      var s = state.sessions[k];
+      if (!s.finished) continue;
+      recordsIn(s).forEach(function (r) {
+        /* the unique key is (exercise, date, weight, reps) — a repeat in one
+           payload would make the upsert touch a row twice and fail */
+        var id = [r.name, s.date, r.w, r.r].join("|");
+        if (seen[id]) return;
+        seen[id] = true;
+        out.push({
+          user_id: auth.user_id, exercise: r.name,
+          weight: parseFloat(r.w) || 0, reps: parseFloat(r.r) || 0,
+          e1rm: Math.round(r.e1rm * 100) / 100, unit: state.unit,
+          per_hand: !!r.each, achieved_on: s.date
+        });
+      });
+    }
+    return out;
+  }
+
+  function fuelRows() {
+    var out = [];
+    for (var date in state.fuel.days) {
+      var total = METRICS.map(function (m) { return fuelTotal(date, m.id); });
+      if (!total.some(function (n) { return n > 0; })) continue;
+      out.push({
+        user_id: auth.user_id, date: date,
+        protein: total[0], creatine: total[1], water: total[2],
+        target_protein: state.fuel.targets.protein,
+        target_creatine: state.fuel.targets.creatine,
+        target_water: state.fuel.targets.water
+      });
+    }
+    return out;
+  }
+
+  function upsert(table, rows, conflict) {
+    if (!rows.length) return Promise.resolve([]);
+    return api("/rest/v1/" + table + "?on_conflict=" + conflict, {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: rows
+    });
+  }
+
+  function syncNow(quiet) {
+    if (!auth || sync.busy) return Promise.resolve();
+    sync.busy = true;
+    sync.error = null;
+    if (!quiet) repaintIfData();
+
+    var sessions = syncableSessions();
+    return withSession()
+      .then(function () { return upsert("sessions", sessions.map(sessionRow), "user_id,client_key"); })
+      .then(function (saved) {
+        var idFor = {};
+        (saved || []).forEach(function (row) { idFor[row.client_key] = row.id; });
+        var details = sessions.filter(function (s) { return idFor[s.key]; }).map(function (s) {
+          return { session_id: idFor[s.key], user_id: auth.user_id, entries: detailEntries(s) };
+        });
+        return upsert("session_details", details, "session_id");
+      })
+      .then(function () { return upsert("fuel_days", fuelRows(), "user_id,date"); })
+      .then(function () { return upsert("prs", recordRows(), "user_id,exercise,achieved_on,weight,reps"); })
+      .then(function () {
+        state.cloud.lastSyncAt = Date.now();
+        save();
+      })
+      .catch(function (err) { sync.error = err.message; })
+      .then(function () { sync.busy = false; repaintIfData(); });
+  }
+
+  /* Pull everything back — the point of the cloud copy is a phone you lost. */
+  function restoreFromCloud() {
+    if (!auth || sync.busy) return Promise.resolve();
+    sync.busy = true;
+    sync.error = null;
+    repaintIfData();
+
+    return withSession()
+      .then(function () {
+        return Promise.all([
+          api("/rest/v1/sessions?user_id=eq." + auth.user_id + "&select=*"),
+          api("/rest/v1/session_details?user_id=eq." + auth.user_id + "&select=*"),
+          api("/rest/v1/fuel_days?user_id=eq." + auth.user_id + "&select=*")
+        ]);
+      })
+      .then(function (res) {
+        var remote = res[0] || [], details = res[1] || [], fuel = res[2] || [];
+        var entriesFor = {};
+        details.forEach(function (d) { entriesFor[d.session_id] = d.entries || {}; });
+
+        var added = 0;
+        remote.forEach(function (r) {
+          if (state.sessions[r.client_key]) return;      /* local wins, never overwrite */
+          state.sessions[r.client_key] = {
+            key: r.client_key, date: r.date, dayId: r.day_id || "", dayName: r.day_name,
+            color: r.color || "blue",
+            startedAt: r.started_at ? Date.parse(r.started_at) : 0,
+            finishedAt: r.finished_at ? Date.parse(r.finished_at) : 0,
+            finished: true, entries: entriesFor[r.id] || {}
+          };
+          added++;
+        });
+
+        fuel.forEach(function (f) {
+          if (state.fuel.days[f.date]) return;
+          state.fuel.days[f.date] = {
+            protein: Number(f.protein) ? [Number(f.protein)] : [],
+            creatine: Number(f.creatine) ? [Number(f.creatine)] : [],
+            water: Number(f.water) ? [Number(f.water)] : []
+          };
+        });
+
+        normalizeSessions(state.sessions);
+        state.cloud.lastSyncAt = Date.now();
+        save();
+        sync.restored = added;
+      })
+      .catch(function (err) { sync.error = err.message; })
+      .then(function () { sync.busy = false; render(); });
+  }
+
+  function repaintIfData() { if (ui.view === "data") render(); }
+
+  var autoSyncTimer = null;
+  function queueSync() {
+    if (!auth) return;
+    if (autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(function () { syncNow(true); }, 4000);
+  }
+
+  function syncStatus() {
+    if (sync.busy) return "Syncing…";
+    if (sync.error) return "Last attempt failed — " + sync.error;
+    if (!state.cloud.lastSyncAt) return "Not synced yet";
+    var mins = Math.floor((Date.now() - state.cloud.lastSyncAt) / 60000);
+    if (mins < 1) return "Synced just now";
+    if (mins < 60) return "Synced " + mins + " min ago";
+    if (mins < 1440) return "Synced " + Math.floor(mins / 60) + "h ago";
+    return "Synced " + Math.floor(mins / 1440) + "d ago";
+  }
+
+  function accountHTML() {
+    if (!auth) {
+      return '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Account</div>' +
+        '<p class="hint">Your log lives on this phone. Signing in keeps a copy in the cloud, so a lost phone is not a lost year — and it is what friends will hang off later.</p>' +
+        '<input class="f" type="email" id="authEmail" placeholder="Email" autocomplete="email" aria-label="Email">' +
+        '<input class="f" type="password" id="authPass" placeholder="Password" autocomplete="current-password" aria-label="Password">' +
+        '<div class="segs"><button class="btn day" data-signin>Sign in</button>' +
+        '<button class="btn" data-signup>Create account</button></div>' +
+        (sync.error ? '<p class="hint" style="color:var(--plate-red)">' + esc(sync.error) + "</p>" : "") +
+      "</div></section>";
+    }
+
+    if (!auth.handle) {
+      return '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Pick a handle</div>' +
+        '<p class="hint">This is how friends find you. Lower case, numbers and underscores, 3–20 characters.</p>' +
+        '<input class="f" id="authHandle" placeholder="e.g. bjossi" autocapitalize="none" aria-label="Handle">' +
+        '<button class="btn day" data-sethandle>Save handle</button>' +
+        (sync.error ? '<p class="hint" style="color:var(--plate-red)">' + esc(sync.error) + "</p>" : "") +
+      "</div></section>";
+    }
+
+    return '<section class="card"><div class="edit-card">' +
+      '<div class="lab">Account</div>' +
+      '<p class="hint"><b class="num">@' + esc(auth.handle) + "</b> · " + esc(auth.email || "") + "</p>" +
+      '<p class="hint"' + (sync.error ? ' style="color:var(--plate-red)"' : "") + ">" + esc(syncStatus()) +
+        (sync.restored ? " · restored " + sync.restored + " session" + (sync.restored === 1 ? "" : "s") : "") + "</p>" +
+      '<div class="segs">' +
+        '<button class="btn day" data-syncnow' + (sync.busy ? " disabled" : "") + ">Sync now</button>" +
+        '<button class="btn" data-restore-cloud' + (sync.busy ? " disabled" : "") + ">Restore</button>" +
+      "</div>" +
+      '<button class="btn" data-signout>Sign out</button>' +
+    "</div></section>";
+  }
+
+  function handleAccountClick(t) {
+    if (t.closest("[data-signin]") || t.closest("[data-signup]")) {
+      var creating = !!t.closest("[data-signup]");
+      var email = (document.getElementById("authEmail") || {}).value || "";
+      var pass = (document.getElementById("authPass") || {}).value || "";
+      if (!email.trim() || pass.length < 6) {
+        sync.error = "Enter an email and a password of at least 6 characters.";
+        render();
+        return true;
+      }
+      sync.error = null;
+      sync.busy = true;
+      render();
+      (creating ? signUp(email.trim(), pass) : signIn(email.trim(), pass))
+        .then(function () { sync.busy = false; render(); return syncNow(true); })
+        .catch(function (err) { sync.busy = false; sync.error = err.message; render(); });
+      return true;
+    }
+
+    if (t.closest("[data-sethandle]")) {
+      var h = ((document.getElementById("authHandle") || {}).value || "").trim().toLowerCase();
+      if (!/^[a-z0-9_]{3,20}$/.test(h)) {
+        sync.error = "Handles are 3–20 characters: lower case letters, numbers, underscores.";
+        render();
+        return true;
+      }
+      sync.error = null;
+      claimHandle(h)
+        .then(function () { render(); return syncNow(true); })
+        .catch(function (err) {
+          sync.error = err.status === 409 || /duplicate/i.test(err.message)
+            ? "That handle is taken — try another."
+            : err.message;
+          render();
+        });
+      return true;
+    }
+
+    if (t.closest("[data-syncnow]")) { syncNow(); return true; }
+    if (t.closest("[data-restore-cloud]")) { restoreFromCloud(); return true; }
+    if (t.closest("[data-signout]")) { signOut(); return true; }
+    return false;
+  }
+
   /* ---------- go ---------- */
   load();
+  auth = loadAuth();
   applyTheme();
   if (!getDay(state.day)) state.day = state.program[0].id;
   render();

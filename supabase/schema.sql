@@ -83,6 +83,7 @@ create table if not exists public.sessions (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references public.profiles(id) on delete cascade,
   client_key  text not null,                       -- local key, makes sync idempotent
+  day_id      text,                                -- which day of the program, for comparisons
   day_name    text not null,
   color       text,
   date        date not null,
@@ -150,6 +151,10 @@ create table if not exists public.push_subscriptions (
   auth       text not null,
   created_at timestamptz not null default now()
 );
+
+-- ----------------------------------------------------------------- migrations
+-- Columns added after the first run. Safe on a fresh database too.
+alter table public.sessions add column if not exists day_id text;
 
 -- -------------------------------------------------------------------- indexes
 create index if not exists sessions_user_date_idx on public.sessions (user_id, date desc);
