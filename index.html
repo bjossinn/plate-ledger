@@ -380,6 +380,77 @@
   .hist-ex b { font-weight: 600; }
   .hist-ex span { color: var(--muted); text-align: right; }
 
+  /* ---- session complete ---- */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: var(--scrim);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    animation: fade .18s ease;
+  }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { transform: translateY(16px); opacity: 0; } }
+  .done-card {
+    width: 100%;
+    max-width: 460px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 -2px 44px rgba(0,0,0,.3);
+    padding: 20px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    animation: rise .26s cubic-bezier(.2,.8,.3,1);
+  }
+  .done-card h2 {
+    margin: 3px 0 0;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -.03em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .done-card h2::before {
+    content: "";
+    width: 5px;
+    height: 25px;
+    border-radius: 3px;
+    background: var(--day);
+    flex: 0 0 auto;
+  }
+  .done-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 0;
+  }
+  .done-stats div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .done-stats b {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -.025em;
+  }
+  .done-stats span {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .done-delta { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+  .done-delta b { color: var(--day); font-weight: 700; }
+
   .empty { text-align: center; color: var(--muted); padding: 44px 20px; font-size: 14px; }
   .empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 5px; }
 
@@ -880,6 +951,7 @@
       var st = e.sets[Number(row.dataset.i)];
       var wIn = row.querySelector('[data-f="w"]');
       var rIn = row.querySelector('[data-f="r"]');
+      var finished = false;
       st.done = !st.done;
       if (st.done) {
         if (!st.w && wIn.placeholder && wIn.placeholder !== state.unit) { st.w = wIn.placeholder; wIn.value = st.w; }
@@ -887,12 +959,18 @@
           var lo = String(ex.reps).match(/\d+/);
           if (lo) { st.r = lo[0]; rIn.value = st.r; }
         }
-        startTimer(restOf(ex));
+        /* Last set of the last exercise: nothing left to rest for. */
+        var dayNow = getDay(state.day);
+        finished = dayNow.ex.length > 0 &&
+          ex.id === dayNow.ex[dayNow.ex.length - 1].id &&
+          Number(row.dataset.i) === e.sets.length - 1;
+        if (finished) stopTimer(); else startTimer(restOf(ex));
       }
       row.classList.toggle("done", st.done);
       tick.setAttribute("aria-pressed", String(st.done));
       save();
       updateProgress();
+      if (finished && !s.celebrated) celebrate(s);
       return;
     }
 
@@ -1029,6 +1107,84 @@
       ui.edit = false;
       save(); render(); return;
     }
+  }
+
+  /* ---------- session complete ---------- */
+  function prevSessionFor(dayId, exceptKey) {
+    var best = null;
+    for (var k in state.sessions) {
+      if (k === exceptKey) continue;
+      var s = state.sessions[k];
+      if (s.dayId !== dayId || doneCount(s) === 0) continue;
+      if (!best || s.date > best.date) best = s;
+    }
+    return best;
+  }
+
+  function repsOf(session) {
+    var n = 0;
+    for (var id in session.entries) {
+      session.entries[id].sets.forEach(function (x) { if (x.done) n += parseFloat(x.r) || 0; });
+    }
+    return n;
+  }
+
+  function celebrate(session) {
+    session.celebrated = true;
+    save();
+
+    var key = sessionKey(session.date, session.dayId);
+    var vol = Math.round(volumeOf(session));
+    var prev = prevSessionFor(session.dayId, key);
+    var line;
+    if (!prev) {
+      line = "First time through this day — every session after it gets measured against this one.";
+    } else {
+      var delta = vol - Math.round(volumeOf(prev));
+      var when = prettyDate(prev.date);
+      when = esc(when === "Yesterday" || when === "Today" ? when.toLowerCase() : when);
+      if (delta > 0) line = "<b>Up " + delta.toLocaleString() + " " + state.unit + "</b> from " + when + ".";
+      else if (delta < 0) line = "<b>Down " + Math.abs(delta).toLocaleString() + " " + state.unit + "</b> from " + when + ".";
+      else line = "<b>Level</b> with " + when + ".";
+    }
+
+    var scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML =
+      '<div class="done-card" role="dialog" aria-modal="true" aria-labelledby="doneTitle">' +
+        '<div><div class="eyebrow">Session complete</div><h2 id="doneTitle">' + esc(session.dayName) + "</h2></div>" +
+        '<div class="done-stats">' +
+          "<div><b>" + doneCount(session) + "</b><span>Sets</span></div>" +
+          "<div><b>" + Math.round(repsOf(session)).toLocaleString() + "</b><span>Reps</span></div>" +
+          "<div><b>" + vol.toLocaleString() + "</b><span>" + state.unit + " volume</span></div>" +
+        "</div>" +
+        '<p class="done-delta">' + line + "</p>" +
+        '<div class="segs">' +
+          '<button class="btn day" data-doneclose>Done</button>' +
+          '<button class="btn" data-donehistory>See history</button>' +
+        "</div>" +
+      "</div>";
+    appEl.appendChild(scrim);
+
+    function close() {
+      if (scrim.parentNode) scrim.parentNode.removeChild(scrim);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(ev) { if (ev.key === "Escape") close(); }
+    document.addEventListener("keydown", onKey);
+
+    scrim.addEventListener("click", function (ev) {
+      if (ev.target === scrim || ev.target.closest("[data-doneclose]")) { close(); return; }
+      if (ev.target.closest("[data-donehistory]")) {
+        close();
+        ui.view = "history";
+        ui.openSession = key;
+        render();
+      }
+    });
+
+    var first = scrim.querySelector("[data-doneclose]");
+    if (first) first.focus();
   }
 
   /* ---------- history ---------- */
