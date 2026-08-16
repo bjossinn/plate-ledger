@@ -176,6 +176,14 @@ update public.events set dedup_key = 'legacy:' || id where dedup_key is null;
 alter table public.events alter column dedup_key set not null;
 create unique index if not exists events_dedup_idx on public.events (user_id, dedup_key);
 
+-- Whether an event has already been pushed to friends' phones. Separate from
+-- dedup_key: that stops duplicate ROWS, this stops a second BUZZ for a row
+-- that was already announced.
+alter table public.events add column if not exists notified boolean not null default false;
+
+-- 16:00 has to mean the user's 16:00, so the reminder job needs their zone.
+alter table public.profiles add column if not exists timezone text;
+
 -- -------------------------------------------------------------------- indexes
 create index if not exists sessions_user_date_idx on public.sessions (user_id, date desc);
 create index if not exists fuel_days_user_date_idx on public.fuel_days (user_id, date desc);

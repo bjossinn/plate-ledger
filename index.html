@@ -767,7 +767,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.7.2";
+  var VERSION = "1.8.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2245,6 +2245,7 @@
       .then(function () { return upsert("fuel_days", fuelRows(), "user_id,date"); })
       .then(function () { return upsert("prs", recordRows(), "user_id,exercise,achieved_on,weight,reps"); })
       .then(pushEvents)
+      .then(fanoutPush)
       .then(function () {
         state.cloud.lastSyncAt = Date.now();
         save();
@@ -2465,6 +2466,127 @@
       })
       .catch(function (err) { social.error = err.message; })
       .then(render);
+  }
+
+  /* ---- push notifications ----
+     The public half of the VAPID pair. It is meant to be public — it only lets
+     the browser verify that a push came from this app. The private half lives
+     in the edge function's secrets and never touches this repo. */
+  var VAPID_PUBLIC = "BCwM-TT-rr1Gwsx2hxtpTbLbuF9_vanJ5uFXjboCcSp3uIDsZ3qUMYUYNdcALRSTy55Ome3bx3BM0vKodIsPpqQ";
+  var push = { state: "unknown", error: null, busy: false };
+
+  function installedToHomeScreen() {
+    return window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  }
+
+  function pushSupported() {
+    return "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+  }
+
+  function b64ToBytes(base64) {
+    var padded = (base64 + "=".repeat((4 - base64.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(padded);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  function bytesToB64(buf) {
+    var bytes = new Uint8Array(buf), s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function refreshPushState() {
+    if (!pushSupported()) { push.state = "unsupported"; return Promise.resolve(); }
+    if (Notification.permission === "denied") { push.state = "blocked"; return Promise.resolve(); }
+    return navigator.serviceWorker.ready
+      .then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (sub) { push.state = sub ? "on" : "off"; })
+      .catch(function () { push.state = "off"; });
+  }
+
+  function storeSubscription(sub) {
+    var raw = sub.toJSON();
+    return api("/rest/v1/push_subscriptions?on_conflict=endpoint", {
+      method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+      body: [{
+        user_id: auth.user_id,
+        endpoint: sub.endpoint,
+        p256dh: raw.keys.p256dh,
+        auth: raw.keys.auth
+      }]
+    });
+  }
+
+  function enablePush() {
+    push.error = null;
+    if (!pushSupported()) {
+      push.error = "This browser cannot show notifications.";
+      push.state = "unsupported";
+      render();
+      return;
+    }
+    push.busy = true;
+    render();
+
+    /* must be called from the tap itself, not after an await */
+    Notification.requestPermission()
+      .then(function (perm) {
+        if (perm !== "granted") throw new Error("Notifications were not allowed. You can change that in your phone's settings for this app.");
+        return navigator.serviceWorker.ready;
+      })
+      .then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (existing) {
+          return existing || reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: b64ToBytes(VAPID_PUBLIC)
+          });
+        });
+      })
+      .then(function (sub) { return withSession().then(function () { return storeSubscription(sub); }); })
+      .then(function () { return sendTimezone(); })
+      .then(function () { push.state = "on"; })
+      .catch(function (err) { push.error = err.message; })
+      .then(function () { push.busy = false; render(); });
+  }
+
+  function disablePush() {
+    push.busy = true;
+    push.error = null;
+    render();
+    navigator.serviceWorker.ready
+      .then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (sub) {
+        if (!sub) return null;
+        var endpoint = sub.endpoint;
+        return sub.unsubscribe().then(function () {
+          return withSession().then(function () {
+            return api("/rest/v1/push_subscriptions?endpoint=eq." + encodeURIComponent(endpoint),
+                       { method: "DELETE", prefer: "return=minimal" });
+          });
+        });
+      })
+      .catch(function (err) { push.error = err.message; })
+      .then(function () { push.state = "off"; push.busy = false; render(); });
+  }
+
+  /* the reminder job needs to know when 16:00 is for this person */
+  function sendTimezone() {
+    var tz = "";
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { tz = ""; }
+    if (!tz) return Promise.resolve();
+    return api("/rest/v1/profiles?id=eq." + auth.user_id,
+               { method: "PATCH", prefer: "return=minimal", body: { timezone: tz } }).catch(function () {});
+  }
+
+  /* Ask the server to tell friends about what just synced. Failure is silent:
+     the activity is already saved, only the buzz was missed. */
+  function fanoutPush() {
+    if (!auth) return Promise.resolve();
+    return api("/functions/v1/notify", { method: "POST", body: { kind: "fanout" } })
+      .catch(function () {});
   }
 
   function repaintIfData() { if (ui.view === "data") render(); }
@@ -2749,7 +2871,26 @@
       "</div></section>";
     }
 
-    return '<section class="card"><div class="edit-card">' +
+    var notifications =
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Notifications</div>' +
+        (push.state === "unsupported"
+          ? '<p class="hint">This browser cannot show notifications. On an iPhone they only work once the app is added to the Home Screen and opened from that icon.</p>'
+          : push.state === "blocked"
+            ? '<p class="hint">Notifications are blocked for this app. Turn them back on in your phone settings, then reopen this page.</p>'
+            : push.state === "on"
+              ? '<p class="hint">On. You will hear about friends finishing a workout, setting a record or hitting a goal — and a nudge at 16:00 if you are behind on fuel.</p>' +
+                '<button class="btn" data-pushoff' + (push.busy ? " disabled" : "") + ">Turn off</button>"
+              : '<p class="hint">Get told when a friend finishes a workout, sets a record or hits a goal, plus a nudge at 16:00 if you are behind on your own fuel.</p>' +
+                (installedToHomeScreen() ? "" :
+                  '<p class="hint" style="color:var(--plate-red)">Add this to your Home Screen and open it from the icon first — an iPhone will not deliver notifications to a browser tab.</p>') +
+                '<button class="btn day" data-pushon' + (push.busy ? " disabled" : "") + ">" +
+                  (push.busy ? "Asking…" : "Turn on notifications") + "</button>") +
+        (push.error ? '<p class="hint" style="color:var(--plate-red)">' + esc(push.error) + "</p>" : "") +
+      "</div></section>";
+
+    return notifications +
+      '<section class="card"><div class="edit-card">' +
       '<div class="lab">Account</div>' +
       '<p class="hint"><b class="num">@' + esc(auth.handle) + "</b> · " + esc(auth.email || "") + "</p>" +
       '<p class="hint"' + (sync.error ? ' style="color:var(--plate-red)"' : "") + ">" + esc(syncStatus()) +
@@ -2800,6 +2941,8 @@
       return true;
     }
 
+    if (t.closest("[data-pushon]")) { enablePush(); return true; }
+    if (t.closest("[data-pushoff]")) { disablePush(); return true; }
     if (t.closest("[data-syncnow]")) { syncNow(); return true; }
     if (t.closest("[data-restore-cloud]")) { restoreFromCloud(); return true; }
     if (t.closest("[data-signout]")) { signOut(); return true; }
@@ -2811,7 +2954,10 @@
   auth = loadAuth();
   applyTheme();
   /* flush anything logged while offline since the app was last open */
-  if (auth) queueSync();
+  if (auth) {
+    queueSync();
+    refreshPushState().then(repaintIfData);
+  }
   if (!getDay(state.day)) state.day = state.program[0].id;
   render();
 })();
