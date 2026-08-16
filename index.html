@@ -262,6 +262,7 @@
     color: var(--day);
     letter-spacing: .01em;
   }
+  .rest-tag { color: var(--faint); font-weight: 600; margin-left: 9px; }
   .note { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .last { font-size: 12px; color: var(--faint); margin-top: 5px; }
   .last b { color: var(--muted); font-weight: 700; }
@@ -387,7 +388,7 @@
   .segs { display: flex; gap: 6px; }
   .segs .btn { flex: 1; }
   .segs .btn[aria-pressed="true"] { background: var(--day); border-color: var(--day); color: #fff; }
-  .hint { font-size: 12px; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin: 0; }
 
   .warn {
     background: color-mix(in srgb, var(--plate-yellow) var(--tint), var(--surface));
@@ -486,43 +487,66 @@
   } catch (e) { store = null; }
 
   /* ---------- default program ---------- */
+  var HEAVY = 180;   // compounds — the ones that actually tax you
+  var LIGHT = 90;    // isolation and accessory work
+
+  /* Exercises that read as isolation work, so imported or renamed entries
+     still get a sensible rest without anyone setting it by hand. */
+  var ISOLATION = /(lateral|raise|curl|pushdown|push-down|extension|calf|abs|crunch|fly|flye|shrug|face pull|kickback|rear delt|pec deck)/i;
+
+  function defaultRest(name) { return ISOLATION.test(String(name)) ? LIGHT : HEAVY; }
+
+  function restOf(ex) { return typeof ex.rest === "number" ? ex.rest : defaultRest(ex.name); }
+
+  function fmtRest(sec) { return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); }
+
   function defaultProgram() {
     return [
       { id: "d1", name: "Upper A", color: "blue", ex: [
-        { id: "d1e1", name: "Barbell Bench Press", sets: 3, reps: "6–8", note: "" },
-        { id: "d1e2", name: "Chest-Supported Row", sets: 3, reps: "8–10", note: "" },
-        { id: "d1e3", name: "Incline Dumbbell Press", sets: 3, reps: "8–12", note: "" },
-        { id: "d1e4", name: "Lat Pulldown", sets: 3, reps: "8–12", note: "" },
-        { id: "d1e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "" },
-        { id: "d1e6", name: "Cable Triceps Pushdown", sets: 2, reps: "10–15", note: "" },
-        { id: "d1e7", name: "Dumbbell / Cable Curl", sets: 2, reps: "10–15", note: "" }
+        { id: "d1e1", name: "Barbell Bench Press", sets: 3, reps: "6–8", note: "", rest: HEAVY },
+        { id: "d1e2", name: "Chest-Supported Row", sets: 3, reps: "8–10", note: "", rest: HEAVY },
+        { id: "d1e3", name: "Incline Dumbbell Press", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d1e4", name: "Lat Pulldown", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d1e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT },
+        { id: "d1e6", name: "Cable Triceps Pushdown", sets: 2, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d1e7", name: "Dumbbell / Cable Curl", sets: 2, reps: "10–15", note: "", rest: LIGHT }
       ]},
       { id: "d2", name: "Lower A", color: "red", ex: [
-        { id: "d2e1", name: "Back Squat", sets: 3, reps: "6–8", note: "" },
-        { id: "d2e2", name: "Romanian Deadlift", sets: 3, reps: "8–10", note: "" },
-        { id: "d2e3", name: "Leg Press", sets: 3, reps: "10–15", note: "" },
-        { id: "d2e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "" },
-        { id: "d2e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "" },
-        { id: "d2e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional" }
+        { id: "d2e1", name: "Back Squat", sets: 3, reps: "6–8", note: "", rest: HEAVY },
+        { id: "d2e2", name: "Romanian Deadlift", sets: 3, reps: "8–10", note: "", rest: HEAVY },
+        { id: "d2e3", name: "Leg Press", sets: 3, reps: "10–15", note: "", rest: HEAVY },
+        { id: "d2e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d2e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d2e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional", rest: LIGHT }
       ]},
       { id: "d3", name: "Upper B", color: "yellow", ex: [
-        { id: "d3e1", name: "Incline Barbell or DB Press", sets: 3, reps: "6–10", note: "" },
-        { id: "d3e2", name: "Pull-Ups / Lat Pulldown", sets: 3, reps: "8–12", note: "" },
-        { id: "d3e3", name: "Machine or DB Chest Press", sets: 3, reps: "8–12", note: "" },
-        { id: "d3e4", name: "Seated Cable Row", sets: 3, reps: "8–12", note: "" },
-        { id: "d3e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "" },
-        { id: "d3e6", name: "Overhead Triceps Extension", sets: 2, reps: "10–15", note: "" },
-        { id: "d3e7", name: "Preacher / Hammer Curl", sets: 2, reps: "10–15", note: "" }
+        { id: "d3e1", name: "Incline Barbell or DB Press", sets: 3, reps: "6–10", note: "", rest: HEAVY },
+        { id: "d3e2", name: "Pull-Ups / Lat Pulldown", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d3e3", name: "Machine or DB Chest Press", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d3e4", name: "Seated Cable Row", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d3e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "", rest: LIGHT },
+        { id: "d3e6", name: "Overhead Triceps Extension", sets: 2, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d3e7", name: "Preacher / Hammer Curl", sets: 2, reps: "10–15", note: "", rest: LIGHT }
       ]},
       { id: "d4", name: "Lower B", color: "green", ex: [
-        { id: "d4e1", name: "Deadlift", sets: 2, reps: "4–6", note: "" },
-        { id: "d4e2", name: "Hack Squat / Front Squat", sets: 3, reps: "8–12", note: "" },
-        { id: "d4e3", name: "Bulgarian Split Squat", sets: 3, reps: "8–12", note: "Each leg · 2–3 sets" },
-        { id: "d4e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "" },
-        { id: "d4e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "" },
-        { id: "d4e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional" }
+        { id: "d4e1", name: "Deadlift", sets: 2, reps: "4–6", note: "", rest: HEAVY },
+        { id: "d4e2", name: "Hack Squat / Front Squat", sets: 3, reps: "8–12", note: "", rest: HEAVY },
+        { id: "d4e3", name: "Bulgarian Split Squat", sets: 3, reps: "8–12", note: "Each leg · 2–3 sets", rest: HEAVY },
+        { id: "d4e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d4e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "", rest: LIGHT },
+        { id: "d4e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional", rest: LIGHT }
       ]}
     ];
+  }
+
+  /* Programs saved before rest was per-exercise carry no rest field — fill it in. */
+  function normalize(program) {
+    program.forEach(function (day) {
+      day.ex.forEach(function (ex) {
+        if (typeof ex.rest !== "number") ex.rest = defaultRest(ex.name);
+      });
+    });
+    return program;
   }
 
   function defaultState() {
@@ -548,7 +572,7 @@
       if (saved && saved.program && saved.sessions) {
         state = {
           v: 1,
-          program: saved.program,
+          program: normalize(saved.program),
           sessions: saved.sessions,
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
@@ -569,6 +593,7 @@
 
   /* ---------- helpers ---------- */
   var COLORS = ["blue", "red", "yellow", "green"];
+  var REST_CHOICES = [60, 90, 120, 180, 240];
 
   function uid(p) { return p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3); }
 
@@ -656,25 +681,27 @@
   }
 
   /* ---------- rest timer ---------- */
-  var timerEnd = 0, timerTick = null;
+  var timerEnd = 0, timerTick = null, timerLen = 0;
   var timerEl = document.getElementById("timer");
 
   function paintTimer() {
-    var left = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
-    var mins = Math.floor(left / 60), secs = left % 60;
     if (!timerEnd) {
-      var r = state.rest;
       timerEl.className = "timer";
-      timerEl.innerHTML = "<b>" + Math.floor(r / 60) + ":" + String(r % 60).padStart(2, "0") + "</b><span>Rest</span>";
+      timerEl.innerHTML = "<b>" + fmtRest(timerLen || state.rest) + "</b><span>Rest</span>";
       return;
     }
+    var left = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
     timerEl.className = "timer running";
-    timerEl.innerHTML = "<b>" + mins + ":" + String(secs).padStart(2, "0") + "</b><span>Tap to stop</span>";
+    timerEl.innerHTML = "<b>" + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0") +
+      "</b><span>Tap to stop</span>";
     if (left <= 0) stopTimer();
   }
 
-  function startTimer() {
-    timerEnd = Date.now() + state.rest * 1000;
+  /* Rest length comes from the exercise you just finished; a bare tap on the
+     button reuses whatever you last rested for. */
+  function startTimer(seconds) {
+    timerLen = seconds || timerLen || state.rest;
+    timerEnd = Date.now() + timerLen * 1000;
     if (timerTick) clearInterval(timerTick);
     timerTick = setInterval(paintTimer, 250);
     paintTimer();
@@ -789,7 +816,8 @@
       return '<section class="card" data-card="' + ex.id + '">' +
         '<div class="card-head"><div>' +
           '<p class="ex-name">' + esc(ex.name) + "</p>" +
-          '<div class="target num">' + ex.sets + " × " + esc(ex.reps) + "</div>" +
+          '<div class="target num">' + ex.sets + " × " + esc(ex.reps) +
+            '<span class="rest-tag">' + fmtRest(restOf(ex)) + " rest</span></div>" +
           (ex.note ? '<div class="note">' + esc(ex.note) + "</div>" : "") +
           lastLine +
         "</div></div>" +
@@ -849,7 +877,7 @@
           var lo = String(ex.reps).match(/\d+/);
           if (lo) { st.r = lo[0]; rIn.value = st.r; }
         }
-        startTimer();
+        startTimer(restOf(ex));
       }
       row.classList.toggle("done", st.done);
       tick.setAttribute("aria-pressed", String(st.done));
@@ -896,6 +924,10 @@
           "</div>" +
           '<input class="f" data-p="note" value="' + esc(ex.note || "") + '" placeholder="Note (optional)" aria-label="Note">' +
         "</div>" +
+        '<div class="lab">Rest between sets</div>' +
+        '<div class="segs">' + REST_CHOICES.map(function (r) {
+          return '<button class="btn sm" data-exrest="' + r + '" aria-pressed="' + (restOf(ex) === r) + '">' + fmtRest(r) + "</button>";
+        }).join("") + "</div>" +
         '<div class="edit-tools">' +
           '<button class="btn sm" data-move="up" ' + (i === 0 ? "disabled" : "") + ">↑</button>" +
           '<button class="btn sm" data-move="down" ' + (i === day.ex.length - 1 ? "disabled" : "") + ">↓</button>" +
@@ -938,6 +970,14 @@
     var col = t.closest("[data-color]");
     if (col) { day.color = col.dataset.color; save(); render(); return; }
 
+    var xr = t.closest("[data-exrest]");
+    if (xr) {
+      var wrapR = xr.closest("[data-ex]");
+      var exR = day.ex.filter(function (x) { return x.id === wrapR.dataset.ex; })[0];
+      if (exR) { exR.rest = Number(xr.dataset.exrest); save(); render(); }
+      return;
+    }
+
     var mv = t.closest("[data-move]");
     if (mv) {
       var idm = mv.closest("[data-ex]").dataset.ex;
@@ -957,7 +997,7 @@
     }
 
     if (t.closest("[data-addex]")) {
-      day.ex.push({ id: uid("x"), name: "New exercise", sets: 3, reps: "8–12", note: "" });
+      day.ex.push({ id: uid("x"), name: "New exercise", sets: 3, reps: "8–12", note: "", rest: state.rest });
       save(); render();
       var cards = viewEl.querySelectorAll('input[data-p="name"]');
       if (cards.length) { var lastIn = cards[cards.length - 1]; lastIn.focus(); lastIn.select(); }
@@ -1047,9 +1087,10 @@
         '<div class="lab">Weight unit</div>' +
         '<div class="segs"><button class="btn" data-unit="kg" aria-pressed="' + (state.unit === "kg") + '">Kilograms</button>' +
         '<button class="btn" data-unit="lb" aria-pressed="' + (state.unit === "lb") + '">Pounds</button></div>' +
-        '<div class="lab" style="margin-top:6px">Rest timer</div>' +
+        '<div class="lab" style="margin-top:6px">Default rest</div>' +
+        '<p class="hint">Every exercise carries its own rest — 3:00 on the compounds, 1:30 on the isolation work — and you change it under <b>Edit</b> on any day. This one only covers exercises you add yourself and a bare tap on the timer button.</p>' +
         '<div class="segs">' + [60, 90, 120, 180].map(function (r) {
-          return '<button class="btn" data-rest="' + r + '" aria-pressed="' + (state.rest === r) + '">' + (r / 60 === Math.floor(r / 60) ? r / 60 + ":00" : Math.floor(r / 60) + ":30") + "</button>";
+          return '<button class="btn" data-rest="' + r + '" aria-pressed="' + (state.rest === r) + '">' + fmtRest(r) + "</button>";
         }).join("") + "</div>" +
       "</div></section>" +
 
@@ -1106,7 +1147,7 @@
         if (!parsed.program || !parsed.sessions) throw new Error("shape");
         state = {
           v: 1,
-          program: parsed.program,
+          program: normalize(parsed.program),
           sessions: parsed.sessions,
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,

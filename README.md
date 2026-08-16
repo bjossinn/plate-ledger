@@ -11,7 +11,9 @@ installs as a standalone app and works offline once it has loaded the first time
 ## What it does
 
 - Four colour-coded training days, coded like competition bumper plates.
-- Weight/reps entry per set with a tap-to-complete tick; a rest timer starts on its own.
+- Weight/reps entry per set with a tap-to-complete tick.
+- Per-exercise rest timers that start on their own — 3:00 after the compounds, 1:30 after
+  isolation work, and adjustable per exercise.
 - "Last time" line under every exercise, and the weight box pre-fills with what you lifted before.
 - `+ Set` / `− Set` for the days you do more or less than planned.
 - Full program editing: rename, reorder, change sets and rep ranges, add notes, add or delete days.
