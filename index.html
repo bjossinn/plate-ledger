@@ -1,0 +1,1161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A phone-first workout logger for a four-day upper/lower split.">
+<meta name="theme-color" content="#EDEEF0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1114" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plate Ledger">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; background: var(--bg); }
+  body { margin: 0; min-height: 100%; }
+  button, input, textarea, select { font-family: inherit; }
+  /* keep the sticky header clear of a translucent status bar when installed */
+  .top { padding-top: env(safe-area-inset-top, 0px); }
+</style>
+<title>Plate Ledger</title>
+<style>
+  :root {
+    --bg: #EDEEF0;
+    --surface: #FFFFFF;
+    --surface-2: #F5F6F8;
+    --ink: #14171C;
+    --muted: #5D646E;
+    --faint: #8B929C;
+    --line: #D8DBE0;
+    --line-strong: #C2C7CF;
+    --field: #FFFFFF;
+    --shadow: 0 1px 2px rgba(16,20,26,.06), 0 6px 18px rgba(16,20,26,.05);
+
+    --plate-blue: #2F6FE0;
+    --plate-red: #C8332B;
+    --plate-yellow: #B8850F;
+    --plate-green: #1E8F52;
+
+    --tint: 12%;
+    --scrim: rgba(16,20,26,.42);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E1114;
+      --surface: #171B20;
+      --surface-2: #1E232A;
+      --ink: #E9EBEE;
+      --muted: #9AA1AB;
+      --faint: #737A85;
+      --line: #272D35;
+      --line-strong: #363E48;
+      --field: #11151A;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.32);
+
+      --plate-blue: #5B93FF;
+      --plate-red: #F0655B;
+      --plate-yellow: #E0A93A;
+      --plate-green: #3FBE7C;
+
+      --tint: 18%;
+      --scrim: rgba(0,0,0,.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0E1114;
+    --surface: #171B20;
+    --surface-2: #1E232A;
+    --ink: #E9EBEE;
+    --muted: #9AA1AB;
+    --faint: #737A85;
+    --line: #272D35;
+    --line-strong: #363E48;
+    --field: #11151A;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.32);
+
+    --plate-blue: #5B93FF;
+    --plate-red: #F0655B;
+    --plate-yellow: #E0A93A;
+    --plate-green: #3FBE7C;
+
+    --tint: 18%;
+    --scrim: rgba(0,0,0,.6);
+  }
+
+  .theme-blue   { --day: var(--plate-blue); }
+  .theme-red    { --day: var(--plate-red); }
+  .theme-yellow { --day: var(--plate-yellow); }
+  .theme-green  { --day: var(--plate-green); }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .num { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+  .app {
+    --day: var(--plate-blue);
+    max-width: 560px;
+    margin: 0 auto;
+    min-height: 100vh;
+    padding-bottom: 118px;
+  }
+
+  /* ---- top bar ---- */
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(1.6) blur(14px);
+    -webkit-backdrop-filter: saturate(1.6) blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px 10px;
+  }
+  .brand { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .brand b {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+  }
+  .brand span {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .nav { display: flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; }
+  .nav button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    padding: 7px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .nav button[aria-current="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+  .days {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .days::-webkit-scrollbar { display: none; }
+  .chip {
+    appearance: none;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 14px 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .chip i {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--c);
+    display: block;
+  }
+  .chip[aria-pressed="true"] {
+    color: var(--ink);
+    border-color: color-mix(in srgb, var(--c) 55%, var(--line));
+    background: color-mix(in srgb, var(--c) var(--tint), var(--surface));
+  }
+
+  /* ---- content ---- */
+  main { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  .sheet-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  h1 {
+    margin: 0;
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -.03em;
+    text-wrap: balance;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h1::before {
+    content: "";
+    width: 5px;
+    height: 26px;
+    border-radius: 3px;
+    background: var(--day);
+    flex: 0 0 auto;
+  }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 9px 13px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost { border-style: dashed; color: var(--muted); background: transparent; width: 100%; padding: 13px; }
+  .btn.day { border-color: transparent; background: var(--day); color: #fff; }
+  .btn.danger { color: var(--plate-red); border-color: color-mix(in srgb, var(--plate-red) 40%, var(--line)); }
+  .btn.sm { font-size: 12px; padding: 7px 10px; border-radius: 9px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-head { padding: 13px 14px 11px; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+  .ex-name { font-size: 16px; font-weight: 700; letter-spacing: -.015em; margin: 0 0 3px; }
+  .target {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--day);
+    letter-spacing: .01em;
+  }
+  .note { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .last { font-size: 12px; color: var(--faint); margin-top: 5px; }
+  .last b { color: var(--muted); font-weight: 700; }
+
+  .rows { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 7px; }
+  .colhead {
+    display: grid;
+    grid-template-columns: 30px 1fr 1fr 50px;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    padding: 0 2px 1px;
+  }
+  .colhead span:nth-child(2), .colhead span:nth-child(3) { padding-left: 12px; }
+  .colhead span:last-child { text-align: center; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 30px 1fr 1fr 50px;
+    gap: 8px;
+    align-items: center;
+  }
+  .row .idx {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--faint);
+    text-align: center;
+  }
+  .row.done .idx { color: var(--day); }
+
+  input {
+    width: 100%;
+    height: 46px;
+    background: var(--field);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 17px;
+    font-weight: 600;
+    text-align: center;
+    padding: 0 6px;
+  }
+  input::placeholder { color: var(--faint); font-weight: 500; }
+  input:focus-visible, .btn:focus-visible, .chip:focus-visible, .nav button:focus-visible, .tick:focus-visible {
+    outline: 2px solid var(--day);
+    outline-offset: 2px;
+  }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+
+  .tick {
+    appearance: none;
+    height: 46px;
+    width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--faint);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .tick svg { width: 20px; height: 20px; }
+  .row.done .tick { background: var(--day); border-color: var(--day); color: #fff; }
+  .row.done input { background: color-mix(in srgb, var(--day) var(--tint), var(--field)); border-color: color-mix(in srgb, var(--day) 35%, var(--line)); }
+
+  .row-tools { display: flex; gap: 8px; padding-top: 3px; }
+  .row-tools .btn { flex: 1; }
+
+  /* ---- edit mode ---- */
+  .edit-card { padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .edit-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .edit-pair { display: grid; grid-template-columns: 88px 1fr; gap: 8px; }
+  .f {
+    width: 100%;
+    height: 44px;
+    background: var(--field);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+    padding: 0 12px;
+  }
+  .f.mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; text-align: center; font-weight: 600; }
+  .f.strong { font-weight: 700; }
+  textarea.f { height: auto; min-height: 120px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; resize: vertical; }
+  .lab {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .edit-tools { display: flex; gap: 6px; }
+  .edit-tools .btn { flex: 1; }
+
+  /* ---- history ---- */
+  .hist { width: 100%; border: 0; background: var(--surface); text-align: left; font: inherit; padding: 13px 14px; cursor: pointer; display: flex; gap: 12px; align-items: center; }
+  .hist .bar { width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); flex: 0 0 auto; }
+  .hist-main { flex: 1; min-width: 0; }
+  .hist-main b { display: block; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .hist-main span { font-size: 12px; color: var(--muted); }
+  .hist-vol { text-align: right; font-size: 13px; font-weight: 700; }
+  .hist-vol span { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .hist-body { border-top: 1px solid var(--line); padding: 11px 14px 13px; display: flex; flex-direction: column; gap: 9px; }
+  .hist-ex { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; align-items: baseline; }
+  .hist-ex b { font-weight: 600; }
+  .hist-ex span { color: var(--muted); text-align: right; }
+
+  .empty { text-align: center; color: var(--muted); padding: 44px 20px; font-size: 14px; }
+  .empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 5px; }
+
+  .sect { display: flex; flex-direction: column; gap: 9px; }
+  .sect > .lab { padding-left: 2px; }
+  .segs { display: flex; gap: 6px; }
+  .segs .btn { flex: 1; }
+  .segs .btn[aria-pressed="true"] { background: var(--day); border-color: var(--day); color: #fff; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  .warn {
+    background: color-mix(in srgb, var(--plate-yellow) var(--tint), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--plate-yellow) 45%, var(--line));
+    border-radius: 12px;
+    padding: 11px 13px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* ---- bottom bar ---- */
+  .bottom {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 30;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: saturate(1.6) blur(14px);
+    -webkit-backdrop-filter: saturate(1.6) blur(14px);
+    border-top: 1px solid var(--line);
+    padding: 10px 16px max(12px, env(safe-area-inset-bottom));
+  }
+  .bottom-in { max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+  .prog { flex: 1; min-width: 0; }
+  .prog-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .prog-top b { font-size: 13px; font-weight: 700; }
+  .prog-top span { font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
+  .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .fill { height: 100%; width: 0; background: var(--day); border-radius: 3px; transition: width .25s ease; }
+
+  .timer {
+    appearance: none;
+    border: 1px solid var(--line-strong);
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 8px 12px;
+    min-width: 84px;
+    cursor: pointer;
+    font: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .timer b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  .timer span { font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .timer.running { background: var(--day); border-color: var(--day); color: #fff; }
+  .timer.running span { color: rgba(255,255,255,.8); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">
+        <b>Plate Ledger</b>
+        <span id="today"></span>
+      </div>
+      <nav class="nav" id="nav">
+        <button data-view="train" aria-current="true">Train</button>
+        <button data-view="history">History</button>
+        <button data-view="data">Data</button>
+      </nav>
+    </div>
+    <div class="days" id="days"></div>
+  </header>
+
+  <main id="view"></main>
+
+  <div class="bottom" id="bottom">
+    <div class="bottom-in">
+      <div class="prog">
+        <div class="prog-top"><b id="progLabel">0 of 0 sets</b><span id="progVol"></span></div>
+        <div class="track"><div class="fill" id="progFill"></div></div>
+      </div>
+      <button class="timer" id="timer"><b>2:00</b><span>Rest</span></button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- storage ---------- */
+  var KEY = "plate-ledger-v1";
+  var store = null;
+  try {
+    window.localStorage.setItem("__pl", "1");
+    window.localStorage.removeItem("__pl");
+    store = window.localStorage;
+  } catch (e) { store = null; }
+
+  /* ---------- default program ---------- */
+  function defaultProgram() {
+    return [
+      { id: "d1", name: "Upper A", color: "blue", ex: [
+        { id: "d1e1", name: "Barbell Bench Press", sets: 3, reps: "6–8", note: "" },
+        { id: "d1e2", name: "Chest-Supported Row", sets: 3, reps: "8–10", note: "" },
+        { id: "d1e3", name: "Incline Dumbbell Press", sets: 3, reps: "8–12", note: "" },
+        { id: "d1e4", name: "Lat Pulldown", sets: 3, reps: "8–12", note: "" },
+        { id: "d1e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "" },
+        { id: "d1e6", name: "Cable Triceps Pushdown", sets: 2, reps: "10–15", note: "" },
+        { id: "d1e7", name: "Dumbbell / Cable Curl", sets: 2, reps: "10–15", note: "" }
+      ]},
+      { id: "d2", name: "Lower A", color: "red", ex: [
+        { id: "d2e1", name: "Back Squat", sets: 3, reps: "6–8", note: "" },
+        { id: "d2e2", name: "Romanian Deadlift", sets: 3, reps: "8–10", note: "" },
+        { id: "d2e3", name: "Leg Press", sets: 3, reps: "10–15", note: "" },
+        { id: "d2e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "" },
+        { id: "d2e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "" },
+        { id: "d2e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional" }
+      ]},
+      { id: "d3", name: "Upper B", color: "yellow", ex: [
+        { id: "d3e1", name: "Incline Barbell or DB Press", sets: 3, reps: "6–10", note: "" },
+        { id: "d3e2", name: "Pull-Ups / Lat Pulldown", sets: 3, reps: "8–12", note: "" },
+        { id: "d3e3", name: "Machine or DB Chest Press", sets: 3, reps: "8–12", note: "" },
+        { id: "d3e4", name: "Seated Cable Row", sets: 3, reps: "8–12", note: "" },
+        { id: "d3e5", name: "Lateral Raises", sets: 3, reps: "12–20", note: "" },
+        { id: "d3e6", name: "Overhead Triceps Extension", sets: 2, reps: "10–15", note: "" },
+        { id: "d3e7", name: "Preacher / Hammer Curl", sets: 2, reps: "10–15", note: "" }
+      ]},
+      { id: "d4", name: "Lower B", color: "green", ex: [
+        { id: "d4e1", name: "Deadlift", sets: 2, reps: "4–6", note: "" },
+        { id: "d4e2", name: "Hack Squat / Front Squat", sets: 3, reps: "8–12", note: "" },
+        { id: "d4e3", name: "Bulgarian Split Squat", sets: 3, reps: "8–12", note: "Each leg · 2–3 sets" },
+        { id: "d4e4", name: "Leg Curl", sets: 3, reps: "10–15", note: "" },
+        { id: "d4e5", name: "Calf Raises", sets: 3, reps: "10–15", note: "" },
+        { id: "d4e6", name: "Abs", sets: 3, reps: "10–15", note: "2–3 sets — third optional" }
+      ]}
+    ];
+  }
+
+  function defaultState() {
+    return {
+      v: 1,
+      program: defaultProgram(),
+      sessions: {},
+      unit: "kg",
+      rest: 120,
+      day: "d1"
+    };
+  }
+
+  var state = defaultState();
+  var ui = { view: "train", edit: false, openSession: null };
+
+  function load() {
+    if (!store) return;
+    var raw = store.getItem(KEY);
+    if (!raw) return;
+    try {
+      var saved = JSON.parse(raw);
+      if (saved && saved.program && saved.sessions) {
+        state = {
+          v: 1,
+          program: saved.program,
+          sessions: saved.sessions,
+          unit: saved.unit === "lb" ? "lb" : "kg",
+          rest: typeof saved.rest === "number" ? saved.rest : 120,
+          day: saved.day || saved.program[0].id
+        };
+      }
+    } catch (e) { /* keep defaults */ }
+  }
+
+  var saveTimer = null;
+  function save() {
+    if (!store) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { store.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    }, 120);
+  }
+
+  /* ---------- helpers ---------- */
+  var COLORS = ["blue", "red", "yellow", "green"];
+
+  function uid(p) { return p + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3); }
+
+  function todayKey() {
+    var d = new Date();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+
+  function prettyDate(iso) {
+    var p = iso.split("-");
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    var t = todayKey();
+    if (iso === t) return "Today";
+    var y = new Date();
+    y.setDate(y.getDate() - 1);
+    var ym = String(y.getMonth() + 1).padStart(2, "0");
+    var yd = String(y.getDate()).padStart(2, "0");
+    if (iso === y.getFullYear() + "-" + ym + "-" + yd) return "Yesterday";
+    return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function getDay(id) {
+    for (var i = 0; i < state.program.length; i++) if (state.program[i].id === id) return state.program[i];
+    return state.program[0];
+  }
+
+  function sessionKey(date, dayId) { return date + "__" + dayId; }
+
+  function currentSession() {
+    var day = getDay(state.day);
+    var k = sessionKey(todayKey(), day.id);
+    if (!state.sessions[k]) {
+      state.sessions[k] = { date: todayKey(), dayId: day.id, dayName: day.name, color: day.color, entries: {} };
+    }
+    var s = state.sessions[k];
+    s.dayName = day.name;
+    s.color = day.color;
+    return s;
+  }
+
+  function entryFor(session, ex) {
+    if (!session.entries[ex.id]) session.entries[ex.id] = { name: ex.name, sets: [] };
+    var e = session.entries[ex.id];
+    e.name = ex.name;
+    while (e.sets.length < ex.sets) e.sets.push({ w: "", r: "", done: false });
+    return e;
+  }
+
+  function lastFor(exId, exceptKey) {
+    var best = null;
+    for (var k in state.sessions) {
+      if (k === exceptKey) continue;
+      var s = state.sessions[k];
+      var e = s.entries[exId];
+      if (!e) continue;
+      var done = e.sets.filter(function (x) { return x.done; });
+      if (!done.length) continue;
+      if (!best || s.date > best.date) best = { date: s.date, sets: done };
+    }
+    return best;
+  }
+
+  function volumeOf(session) {
+    var v = 0;
+    for (var id in session.entries) {
+      session.entries[id].sets.forEach(function (s) {
+        if (s.done) v += (parseFloat(s.w) || 0) * (parseFloat(s.r) || 0);
+      });
+    }
+    return v;
+  }
+
+  function doneCount(session) {
+    var n = 0;
+    for (var id in session.entries) n += session.entries[id].sets.filter(function (s) { return s.done; }).length;
+    return n;
+  }
+
+  /* ---------- rest timer ---------- */
+  var timerEnd = 0, timerTick = null;
+  var timerEl = document.getElementById("timer");
+
+  function paintTimer() {
+    var left = Math.max(0, Math.round((timerEnd - Date.now()) / 1000));
+    var mins = Math.floor(left / 60), secs = left % 60;
+    if (!timerEnd) {
+      var r = state.rest;
+      timerEl.className = "timer";
+      timerEl.innerHTML = "<b>" + Math.floor(r / 60) + ":" + String(r % 60).padStart(2, "0") + "</b><span>Rest</span>";
+      return;
+    }
+    timerEl.className = "timer running";
+    timerEl.innerHTML = "<b>" + mins + ":" + String(secs).padStart(2, "0") + "</b><span>Tap to stop</span>";
+    if (left <= 0) stopTimer();
+  }
+
+  function startTimer() {
+    timerEnd = Date.now() + state.rest * 1000;
+    if (timerTick) clearInterval(timerTick);
+    timerTick = setInterval(paintTimer, 250);
+    paintTimer();
+  }
+
+  function stopTimer() {
+    timerEnd = 0;
+    if (timerTick) { clearInterval(timerTick); timerTick = null; }
+    paintTimer();
+  }
+
+  timerEl.addEventListener("click", function () {
+    if (timerEnd) stopTimer(); else startTimer();
+  });
+
+  /* ---------- chrome ---------- */
+  var appEl = document.getElementById("app");
+  var viewEl = document.getElementById("view");
+  var daysEl = document.getElementById("days");
+  var navEl = document.getElementById("nav");
+
+  document.getElementById("today").textContent =
+    new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+
+  navEl.addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-view]");
+    if (!b) return;
+    ui.view = b.dataset.view;
+    ui.edit = false;
+    render();
+  });
+
+  function renderDays() {
+    daysEl.hidden = ui.view !== "train";
+    if (ui.view !== "train") { daysEl.innerHTML = ""; return; }
+    daysEl.innerHTML = state.program.map(function (d) {
+      return '<button class="chip" data-day="' + d.id + '" aria-pressed="' + (d.id === state.day) +
+        '" style="--c: var(--plate-' + d.color + ')"><i></i>' + esc(d.name) + "</button>";
+    }).join("");
+  }
+
+  daysEl.addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-day]");
+    if (!b) return;
+    state.day = b.dataset.day;
+    ui.edit = false;
+    save();
+    render();
+  });
+
+  function updateProgress() {
+    var fill = document.getElementById("progFill");
+    var label = document.getElementById("progLabel");
+    var vol = document.getElementById("progVol");
+    if (ui.view !== "train") {
+      var total = 0, done = 0, v = 0;
+      for (var k in state.sessions) { done += doneCount(state.sessions[k]); v += volumeOf(state.sessions[k]); }
+      label.textContent = done + " sets logged all-time";
+      vol.textContent = Math.round(v).toLocaleString() + " " + state.unit;
+      fill.style.width = done ? "100%" : "0%";
+      return;
+    }
+    var day = getDay(state.day);
+    var s = currentSession();
+    var planned = day.ex.reduce(function (a, e) { return a + Math.max(e.sets, (s.entries[e.id] || { sets: [] }).sets.length); }, 0);
+    var d = doneCount(s);
+    label.textContent = d + " of " + planned + " sets";
+    vol.textContent = Math.round(volumeOf(s)).toLocaleString() + " " + state.unit;
+    fill.style.width = planned ? Math.min(100, (d / planned) * 100) + "%" : "0%";
+  }
+
+  function render() {
+    var day = getDay(state.day);
+    appEl.className = "app theme-" + day.color;
+    Array.prototype.forEach.call(navEl.children, function (b) {
+      b.setAttribute("aria-current", String(b.dataset.view === ui.view));
+    });
+    renderDays();
+    if (ui.view === "train") viewEl.innerHTML = ui.edit ? editHTML(day) : trainHTML(day);
+    else if (ui.view === "history") viewEl.innerHTML = historyHTML();
+    else viewEl.innerHTML = dataHTML();
+    updateProgress();
+    paintTimer();
+  }
+
+  /* ---------- train view ---------- */
+  var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  function trainHTML(day) {
+    var s = currentSession();
+    var key = sessionKey(todayKey(), day.id);
+    var cards = day.ex.map(function (ex) {
+      var e = entryFor(s, ex);
+      var last = lastFor(ex.id, key);
+      var lastLine = "";
+      if (last) {
+        lastLine = '<div class="last">Last <b>' + esc(prettyDate(last.date)) + "</b> · " +
+          last.sets.map(function (x) {
+            return '<span class="num">' + esc(x.w || "–") + "×" + esc(x.r || "–") + "</span>";
+          }).join(", ") + "</div>";
+      }
+      var rows = e.sets.map(function (st, i) {
+        var prefill = last && last.sets[i] ? last.sets[i].w : "";
+        return '<div class="row' + (st.done ? " done" : "") + '" data-ex="' + ex.id + '" data-i="' + i + '">' +
+          '<div class="idx num">' + (i + 1) + "</div>" +
+          '<input type="number" inputmode="decimal" step="any" data-f="w" value="' + esc(st.w) + '" placeholder="' + esc(prefill || state.unit) + '" aria-label="Weight, set ' + (i + 1) + '">' +
+          '<input type="number" inputmode="numeric" step="1" data-f="r" value="' + esc(st.r) + '" placeholder="reps" aria-label="Reps, set ' + (i + 1) + '">' +
+          '<button class="tick" data-tick aria-label="Mark set ' + (i + 1) + ' done" aria-pressed="' + st.done + '">' + CHECK + "</button>" +
+          "</div>";
+      }).join("");
+
+      return '<section class="card" data-card="' + ex.id + '">' +
+        '<div class="card-head"><div>' +
+          '<p class="ex-name">' + esc(ex.name) + "</p>" +
+          '<div class="target num">' + ex.sets + " × " + esc(ex.reps) + "</div>" +
+          (ex.note ? '<div class="note">' + esc(ex.note) + "</div>" : "") +
+          lastLine +
+        "</div></div>" +
+        '<div class="rows">' +
+          '<div class="colhead"><span>Set</span><span>' + state.unit + "</span><span>Reps</span><span>Done</span></div>" +
+          rows +
+          '<div class="row-tools">' +
+            '<button class="btn sm" data-addset="' + ex.id + '">+ Set</button>' +
+            (e.sets.length > ex.sets ? '<button class="btn sm" data-rmset="' + ex.id + '">− Set</button>' : "") +
+          "</div>" +
+        "</div></section>";
+    }).join("");
+
+    var warn = store ? "" : '<div class="warn"><b>Storage is blocked in this view.</b> Your log will vanish when you close the page — open the artifact link directly in Safari, or copy a backup from the Data tab before you leave.</div>';
+
+    return warn +
+      '<div class="sheet-head"><div><div class="eyebrow">Day ' + (state.program.indexOf(day) + 1) + " of " + state.program.length + "</div><h1>" + esc(day.name) + "</h1></div>" +
+      '<button class="btn" data-edit>Edit</button></div>' + cards;
+  }
+
+  /* ---------- train interactions (no full re-render on typing) ---------- */
+  viewEl.addEventListener("input", function (ev) {
+    var inp = ev.target;
+    if (inp.dataset.f) {
+      var row = inp.closest(".row");
+      var s = currentSession();
+      var ex = getDay(state.day).ex.filter(function (x) { return x.id === row.dataset.ex; })[0];
+      if (!ex) return;
+      var e = entryFor(s, ex);
+      var st = e.sets[Number(row.dataset.i)];
+      if (!st) return;
+      st[inp.dataset.f] = inp.value;
+      save();
+      updateProgress();
+      return;
+    }
+    if (inp.dataset.p) { editField(inp); return; }
+  });
+
+  viewEl.addEventListener("click", function (ev) {
+    var t = ev.target;
+
+    var tick = t.closest("[data-tick]");
+    if (tick) {
+      var row = tick.closest(".row");
+      var s = currentSession();
+      var ex = getDay(state.day).ex.filter(function (x) { return x.id === row.dataset.ex; })[0];
+      if (!ex) return;
+      var e = entryFor(s, ex);
+      var st = e.sets[Number(row.dataset.i)];
+      var wIn = row.querySelector('[data-f="w"]');
+      var rIn = row.querySelector('[data-f="r"]');
+      st.done = !st.done;
+      if (st.done) {
+        if (!st.w && wIn.placeholder && wIn.placeholder !== state.unit) { st.w = wIn.placeholder; wIn.value = st.w; }
+        if (!st.r) {
+          var lo = String(ex.reps).match(/\d+/);
+          if (lo) { st.r = lo[0]; rIn.value = st.r; }
+        }
+        startTimer();
+      }
+      row.classList.toggle("done", st.done);
+      tick.setAttribute("aria-pressed", String(st.done));
+      save();
+      updateProgress();
+      return;
+    }
+
+    var add = t.closest("[data-addset]");
+    if (add) {
+      var exA = getDay(state.day).ex.filter(function (x) { return x.id === add.dataset.addset; })[0];
+      entryFor(currentSession(), exA).sets.push({ w: "", r: "", done: false });
+      save();
+      render();
+      return;
+    }
+
+    var rm = t.closest("[data-rmset]");
+    if (rm) {
+      var eR = entryFor(currentSession(), getDay(state.day).ex.filter(function (x) { return x.id === rm.dataset.rmset; })[0]);
+      eR.sets.pop();
+      save();
+      render();
+      return;
+    }
+
+    if (t.closest("[data-edit]")) { ui.edit = true; render(); return; }
+    if (t.closest("[data-doneedit]")) { ui.edit = false; render(); return; }
+
+    handleEditClick(t);
+    handleDataClick(t);
+    handleHistoryClick(t);
+  });
+
+  /* ---------- edit program ---------- */
+  function editHTML(day) {
+    var cards = day.ex.map(function (ex, i) {
+      return '<section class="card"><div class="edit-card" data-ex="' + ex.id + '">' +
+        '<div class="edit-grid">' +
+          '<input class="f strong" data-p="name" value="' + esc(ex.name) + '" aria-label="Exercise name">' +
+          '<div class="edit-pair">' +
+            '<input class="f mono" data-p="sets" type="number" inputmode="numeric" min="1" max="12" value="' + ex.sets + '" aria-label="Sets">' +
+            '<input class="f" data-p="reps" value="' + esc(ex.reps) + '" aria-label="Rep range">' +
+          "</div>" +
+          '<input class="f" data-p="note" value="' + esc(ex.note || "") + '" placeholder="Note (optional)" aria-label="Note">' +
+        "</div>" +
+        '<div class="edit-tools">' +
+          '<button class="btn sm" data-move="up" ' + (i === 0 ? "disabled" : "") + ">↑</button>" +
+          '<button class="btn sm" data-move="down" ' + (i === day.ex.length - 1 ? "disabled" : "") + ">↓</button>" +
+          '<button class="btn sm danger" data-delex>Remove</button>' +
+        "</div></div></section>";
+    }).join("");
+
+    return '<div class="sheet-head"><div><div class="eyebrow">Editing</div><h1>' + esc(day.name) + "</h1></div>" +
+      '<button class="btn day" data-doneedit>Done</button></div>' +
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Day name</div>' +
+        '<input class="f strong" data-p="dayname" value="' + esc(day.name) + '" aria-label="Day name">' +
+        '<div class="lab">Plate colour</div>' +
+        '<div class="segs">' + COLORS.map(function (c) {
+          return '<button class="btn sm" data-color="' + c + '" aria-pressed="' + (c === day.color) + '" style="--day: var(--plate-' + c + ')">' +
+            c.charAt(0).toUpperCase() + c.slice(1) + "</button>";
+        }).join("") + "</div>" +
+      "</div></section>" +
+      cards +
+      '<button class="btn ghost" data-addex>+ Add exercise</button>' +
+      '<div class="segs"><button class="btn" data-addday>+ Add training day</button>' +
+      (state.program.length > 1 ? '<button class="btn danger" data-delday>Delete day</button>' : "") + "</div>";
+  }
+
+  function editField(inp) {
+    var day = getDay(state.day);
+    if (inp.dataset.p === "dayname") { day.name = inp.value; save(); renderDays(); return; }
+    var wrap = inp.closest("[data-ex]");
+    if (!wrap) return;
+    var ex = day.ex.filter(function (x) { return x.id === wrap.dataset.ex; })[0];
+    if (!ex) return;
+    if (inp.dataset.p === "sets") ex.sets = Math.max(1, Math.min(12, parseInt(inp.value, 10) || 1));
+    else ex[inp.dataset.p] = inp.value;
+    save();
+  }
+
+  function handleEditClick(t) {
+    var day = getDay(state.day);
+
+    var col = t.closest("[data-color]");
+    if (col) { day.color = col.dataset.color; save(); render(); return; }
+
+    var mv = t.closest("[data-move]");
+    if (mv) {
+      var idm = mv.closest("[data-ex]").dataset.ex;
+      var i = day.ex.findIndex(function (x) { return x.id === idm; });
+      var j = mv.dataset.move === "up" ? i - 1 : i + 1;
+      if (j < 0 || j >= day.ex.length) return;
+      var tmp = day.ex[i]; day.ex[i] = day.ex[j]; day.ex[j] = tmp;
+      save(); render(); return;
+    }
+
+    if (t.closest("[data-delex]")) {
+      var idd = t.closest("[data-ex]").dataset.ex;
+      var ex = day.ex.filter(function (x) { return x.id === idd; })[0];
+      if (!confirm("Remove " + ex.name + " from " + day.name + "? Past logs are kept in History.")) return;
+      day.ex = day.ex.filter(function (x) { return x.id !== idd; });
+      save(); render(); return;
+    }
+
+    if (t.closest("[data-addex]")) {
+      day.ex.push({ id: uid("x"), name: "New exercise", sets: 3, reps: "8–12", note: "" });
+      save(); render();
+      var cards = viewEl.querySelectorAll('input[data-p="name"]');
+      if (cards.length) { var lastIn = cards[cards.length - 1]; lastIn.focus(); lastIn.select(); }
+      return;
+    }
+
+    if (t.closest("[data-addday]")) {
+      var nd = { id: uid("d"), name: "Day " + (state.program.length + 1), color: COLORS[state.program.length % 4], ex: [] };
+      state.program.push(nd);
+      state.day = nd.id;
+      save(); render(); return;
+    }
+
+    if (t.closest("[data-delday]")) {
+      if (state.program.length < 2) return;
+      if (!confirm("Delete " + day.name + "? Past logs are kept in History.")) return;
+      state.program = state.program.filter(function (d) { return d.id !== day.id; });
+      state.day = state.program[0].id;
+      ui.edit = false;
+      save(); render(); return;
+    }
+  }
+
+  /* ---------- history ---------- */
+  function historyHTML() {
+    var keys = Object.keys(state.sessions).filter(function (k) { return doneCount(state.sessions[k]) > 0; });
+    keys.sort(function (a, b) { return state.sessions[b].date.localeCompare(state.sessions[a].date) || b.localeCompare(a); });
+
+    if (!keys.length) {
+      return '<div class="empty"><b>No sessions yet</b>Tick your first set on the Train tab and it lands here.</div>';
+    }
+
+    return '<div class="sheet-head"><div><div class="eyebrow">' + keys.length + ' session' + (keys.length === 1 ? "" : "s") + '</div><h1>History</h1></div></div>' +
+      keys.map(function (k) {
+        var s = state.sessions[k];
+        var open = ui.openSession === k;
+        var body = "";
+        if (open) {
+          var lines = [];
+          for (var id in s.entries) {
+            var e = s.entries[id];
+            var d = e.sets.filter(function (x) { return x.done; });
+            if (!d.length) continue;
+            lines.push('<div class="hist-ex"><b>' + esc(e.name) + '</b><span class="num">' +
+              d.map(function (x) { return esc(x.w || "–") + "×" + esc(x.r || "–"); }).join(" · ") + "</span></div>");
+          }
+          body = '<div class="hist-body">' + lines.join("") +
+            '<button class="btn sm danger" data-delsession="' + esc(k) + '">Delete this session</button></div>';
+        }
+        return '<section class="card">' +
+          '<button class="hist" data-session="' + esc(k) + '" style="--c: var(--plate-' + (s.color || "blue") + ')">' +
+            '<span class="bar"></span>' +
+            '<span class="hist-main"><b>' + esc(s.dayName) + "</b><span>" + esc(prettyDate(s.date)) + " · " + doneCount(s) + " sets</span></span>" +
+            '<span class="hist-vol num">' + Math.round(volumeOf(s)).toLocaleString() + "<span>" + state.unit + " volume</span></span>" +
+          "</button>" + body + "</section>";
+      }).join("");
+  }
+
+  function handleHistoryClick(t) {
+    var del = t.closest("[data-delsession]");
+    if (del) {
+      if (!confirm("Delete this session permanently?")) return;
+      delete state.sessions[del.dataset.delsession];
+      ui.openSession = null;
+      save(); render(); return;
+    }
+    var h = t.closest("[data-session]");
+    if (h) {
+      ui.openSession = ui.openSession === h.dataset.session ? null : h.dataset.session;
+      render();
+    }
+  }
+
+  /* ---------- data ---------- */
+  var downloads = null;
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("downloads").then(function (d) {
+      downloads = d;
+      if (d && ui.view === "data") render();
+    }).catch(function () {});
+  }
+
+  function dataHTML() {
+    var sessions = Object.keys(state.sessions).filter(function (k) { return doneCount(state.sessions[k]) > 0; }).length;
+    return '<div class="sheet-head"><div><div class="eyebrow">Backup &amp; settings</div><h1>Data</h1></div></div>' +
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Weight unit</div>' +
+        '<div class="segs"><button class="btn" data-unit="kg" aria-pressed="' + (state.unit === "kg") + '">Kilograms</button>' +
+        '<button class="btn" data-unit="lb" aria-pressed="' + (state.unit === "lb") + '">Pounds</button></div>' +
+        '<div class="lab" style="margin-top:6px">Rest timer</div>' +
+        '<div class="segs">' + [60, 90, 120, 180].map(function (r) {
+          return '<button class="btn" data-rest="' + r + '" aria-pressed="' + (state.rest === r) + '">' + (r / 60 === Math.floor(r / 60) ? r / 60 + ":00" : Math.floor(r / 60) + ":30") + "</button>";
+        }).join("") + "</div>" +
+      "</div></section>" +
+
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Backup</div>' +
+        '<p class="hint">' + sessions + ' logged session' + (sessions === 1 ? "" : "s") + ' live on this device only. Copy or download a backup now and again — pasting it back restores everything.</p>' +
+        '<div class="segs"><button class="btn" data-copy>Copy backup</button>' +
+        (downloads ? '<button class="btn" data-download>Download file</button>' : "") + "</div>" +
+        '<div class="lab" style="margin-top:6px">Restore</div>' +
+        '<textarea class="f" id="restoreBox" placeholder="Paste a backup here" aria-label="Backup text"></textarea>' +
+        '<button class="btn" data-restore>Restore from text</button>' +
+      "</div></section>" +
+
+      '<section class="card"><div class="edit-card">' +
+        '<div class="lab">Reset</div>' +
+        '<p class="hint">Puts the four-day upper/lower split back exactly as written. Your logged sessions are untouched.</p>' +
+        '<button class="btn danger" data-resetprog>Reset program to default</button>' +
+        '<button class="btn danger" data-wipe>Erase everything</button>' +
+      "</div></section>";
+  }
+
+  function handleDataClick(t) {
+    var u = t.closest("[data-unit]");
+    if (u) { state.unit = u.dataset.unit; save(); render(); return; }
+
+    var r = t.closest("[data-rest]");
+    if (r) { state.rest = Number(r.dataset.rest); save(); render(); return; }
+
+    if (t.closest("[data-copy]")) {
+      var text = JSON.stringify(state);
+      var btn = t.closest("[data-copy]");
+      var done = function (ok) { btn.textContent = ok ? "Copied" : "Copy failed"; setTimeout(function () { btn.textContent = "Copy backup"; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { showFallback(text); });
+      } else showFallback(text);
+      return;
+    }
+
+    if (t.closest("[data-download]")) {
+      if (!downloads) return;
+      var b = t.closest("[data-download]");
+      downloads.save({ filename: "plate-ledger-" + todayKey() + ".json", data: JSON.stringify(state, null, 2) })
+        .then(function () { b.textContent = "Saved"; setTimeout(function () { b.textContent = "Download file"; }, 1600); })
+        .catch(function () { b.textContent = "Not saved"; setTimeout(function () { b.textContent = "Download file"; }, 1600); });
+      return;
+    }
+
+    if (t.closest("[data-restore]")) {
+      var box = document.getElementById("restoreBox");
+      var raw = box.value.trim();
+      if (!raw) return;
+      try {
+        var parsed = JSON.parse(raw);
+        if (!parsed.program || !parsed.sessions) throw new Error("shape");
+        state = {
+          v: 1,
+          program: parsed.program,
+          sessions: parsed.sessions,
+          unit: parsed.unit === "lb" ? "lb" : "kg",
+          rest: typeof parsed.rest === "number" ? parsed.rest : 120,
+          day: parsed.day || parsed.program[0].id
+        };
+        save();
+        ui.view = "train";
+        render();
+      } catch (e) {
+        box.value = "";
+        box.placeholder = "That text isn't a Plate Ledger backup — paste the whole thing, starting with {";
+      }
+      return;
+    }
+
+    if (t.closest("[data-resetprog]")) {
+      if (!confirm("Reset the program to the original four-day split?")) return;
+      state.program = defaultProgram();
+      state.day = "d1";
+      save(); render(); return;
+    }
+
+    if (t.closest("[data-wipe]")) {
+      if (!confirm("Erase the program and every logged session? This cannot be undone.")) return;
+      state = defaultState();
+      save(); render(); return;
+    }
+  }
+
+  function showFallback(text) {
+    var box = document.getElementById("restoreBox");
+    if (!box) return;
+    box.value = text;
+    box.focus();
+    box.select();
+  }
+
+  /* ---------- go ---------- */
+  load();
+  if (!getDay(state.day)) state.day = state.program[0].id;
+  render();
+})();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () { /* offline support is optional */ });
+    });
+  }
+</script>
+</body>
+</html>
