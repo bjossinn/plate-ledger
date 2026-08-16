@@ -23,6 +23,14 @@ installs as a standalone app and works offline once it has loaded the first time
 - History with per-session volume, expandable to every logged set.
 - Light/dark/system theme switch.
 
+### Fuel
+
+Daily protein, creatine and water against targets you set (defaults 200 g / 10 g / 3 L).
+Quick-add buttons plus a custom amount, undo, and a seven-day strip showing which goals you hit.
+Water is stored in millilitres and shown in litres. Each metric is a stat tile with a meter —
+one value against one target — so identity never rests on colour alone; the hues are Okabe-Ito
+derived and validated per theme for colour-vision deficiency.
+
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the

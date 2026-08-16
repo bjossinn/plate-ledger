@@ -35,6 +35,10 @@
     --field: #FFFFFF;
     --shadow: 0 1px 2px rgba(16,20,26,.06), 0 6px 18px rgba(16,20,26,.05);
 
+    --met-protein: #D55E00;
+    --met-creatine: #009E73;
+    --met-water: #0072B2;
+
     --plate-blue: #2F6FE0;
     --plate-red: #C8332B;
     --plate-yellow: #B8850F;
@@ -57,6 +61,10 @@
       --field: #11151A;
       --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.32);
 
+      --met-protein: #D66E20;
+      --met-creatine: #0FA57E;
+      --met-water: #3B8FCF;
+
       --plate-blue: #5B93FF;
       --plate-red: #F0655B;
       --plate-yellow: #E0A93A;
@@ -78,6 +86,10 @@
     --line-strong: #363E48;
     --field: #11151A;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.32);
+
+    --met-protein: #D66E20;
+    --met-creatine: #0FA57E;
+    --met-water: #3B8FCF;
 
     --plate-blue: #5B93FF;
     --plate-red: #F0655B;
@@ -147,7 +159,17 @@
     color: var(--faint);
   }
 
-  .nav { display: flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; }
+  /* four tabs need the full width on a phone, so the nav gets its own row */
+  .nav {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 2px;
+    margin: 0 16px 12px;
+  }
   .nav button {
     appearance: none;
     border: 0;
@@ -425,6 +447,55 @@
     text-align: center;
   }
 
+  /* ---- fuel ----
+     Each metric is a stat tile with a meter, not a chart: one value against one
+     target. Identity never rests on colour — every tile is named and labelled.
+     Hues are Okabe-Ito derived, validated per mode with the palette validator. */
+  .m-protein  { --m: var(--met-protein); }
+  .m-creatine { --m: var(--met-creatine); }
+  .m-water    { --m: var(--met-water); }
+
+  .fuel-card { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .fuel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .fuel-name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .fuel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--m); flex: 0 0 auto; }
+  .fuel-val {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  .fuel-val b { font-size: 21px; font-weight: 700; letter-spacing: -.03em; color: var(--ink); }
+
+  .meter { height: 10px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--m); border-radius: 0 4px 4px 0; transition: width .3s ease; }
+
+  .fuel-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 17px; }
+  .fuel-hit { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--m); display: flex; align-items: center; gap: 5px; }
+  .fuel-hit svg { width: 13px; height: 13px; }
+  .fuel-left { font-size: 12px; color: var(--muted); }
+  .fuel-undo { font-size: 12px; font-weight: 700; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+
+  .quick { display: flex; gap: 6px; }
+  .quick .btn { flex: 1; }
+  .custom { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+  .custom input { height: 42px; font-size: 16px; }
+
+  .week { display: grid; grid-template-columns: 68px repeat(7, 1fr); gap: 7px 4px; align-items: center; }
+  .week-h { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); text-align: center; }
+  .week-l { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .week i {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--m) 55%, var(--line));
+    background: transparent;
+    margin: 0 auto;
+    display: block;
+  }
+  .week i.on { background: var(--m); border-color: var(--m); }
+
   /* ---- session complete ---- */
   .scrim {
     position: fixed;
@@ -580,12 +651,13 @@
         <b>Plate Ledger</b>
         <span id="today"></span>
       </div>
-      <nav class="nav" id="nav">
-        <button data-view="train" aria-current="true">Train</button>
-        <button data-view="history">History</button>
-        <button data-view="data">Data</button>
-      </nav>
     </div>
+    <nav class="nav" id="nav">
+      <button data-view="train" aria-current="true">Train</button>
+      <button data-view="fuel">Fuel</button>
+      <button data-view="history">History</button>
+      <button data-view="data">Data</button>
+    </nav>
     <div class="days" id="days"></div>
   </header>
 
@@ -607,7 +679,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.3.0";
+  var VERSION = "1.4.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -680,6 +752,17 @@
     return program;
   }
 
+  function normalizeFuel(fuel) {
+    var f = fuel && typeof fuel === "object" ? fuel : defaultFuel();
+    var d = defaultTargets();
+    f.targets = f.targets || {};
+    METRICS.forEach(function (m) {
+      if (typeof f.targets[m.id] !== "number" || !(f.targets[m.id] > 0)) f.targets[m.id] = d[m.id];
+    });
+    f.days = f.days || {};
+    return f;
+  }
+
   /* Sessions gained a key, a start time and a finished flag. Anything logged
      before that is closed out, except today's, which you may still be mid-way
      through. Entries keep whatever weight convention they were logged under. */
@@ -697,11 +780,23 @@
     return sessions;
   }
 
+  /* Water is held in millilitres and shown in litres; the rest are grams. */
+  var METRICS = [
+    { id: "protein",  name: "Protein",  unit: "g", per: 1,    quick: [20, 30, 50],   step: "1" },
+    { id: "creatine", name: "Creatine", unit: "g", per: 1,    quick: [5, 10],        step: "0.5" },
+    { id: "water",    name: "Water",    unit: "L", per: 1000, quick: [250, 500, 750], step: "50", inputUnit: "ml" }
+  ];
+
+  function defaultTargets() { return { protein: 200, creatine: 10, water: 3000 }; }
+
+  function defaultFuel() { return { targets: defaultTargets(), days: {} }; }
+
   function defaultState() {
     return {
       v: 1,
       program: defaultProgram(),
       sessions: {},
+      fuel: defaultFuel(),
       unit: "kg",
       rest: 120,
       theme: "system",
@@ -723,6 +818,7 @@
           v: 1,
           program: normalize(saved.program),
           sessions: normalizeSessions(saved.sessions),
+          fuel: normalizeFuel(saved.fuel),
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
           theme: saved.theme || "system",
@@ -946,6 +1042,18 @@
     var fill = document.getElementById("progFill");
     var label = document.getElementById("progLabel");
     var vol = document.getElementById("progVol");
+    if (ui.view === "fuel") {
+      var today = todayKey();
+      var hits = METRICS.filter(function (m) { return fuelHit(today, m.id); }).length;
+      var avg = METRICS.reduce(function (a, m) {
+        return a + Math.min(1, fuelTotal(today, m.id) / state.fuel.targets[m.id]);
+      }, 0) / METRICS.length * 100;
+      label.textContent = hits + " of " + METRICS.length + " goals hit";
+      vol.textContent = Math.round(avg) + "% of today";
+      fill.style.width = avg + "%";
+      return;
+    }
+
     if (ui.view !== "train") {
       var total = 0, done = 0, v = 0;
       for (var k in state.sessions) { done += doneCount(state.sessions[k]); v += volumeOf(state.sessions[k]); }
@@ -981,6 +1089,7 @@
     }
 
     if (ui.view === "train") viewEl.innerHTML = ui.edit ? editHTML(day) : trainHTML(day);
+    else if (ui.view === "fuel") viewEl.innerHTML = fuelHTML();
     else if (ui.view === "history") viewEl.innerHTML = historyHTML();
     else viewEl.innerHTML = dataHTML();
     updateProgress();
@@ -1059,6 +1168,13 @@
       return;
     }
     if (inp.dataset.p) { editField(inp); return; }
+
+    if (inp.dataset.target) {
+      var met = METRICS.filter(function (x) { return x.id === inp.dataset.target; })[0];
+      var tv = parseFloat(inp.value);
+      if (met && isFinite(tv) && tv > 0) { state.fuel.targets[met.id] = tv * met.per; save(); }
+      return;
+    }
   });
 
   viewEl.addEventListener("click", function (ev) {
@@ -1114,9 +1230,15 @@
     if (t.closest("[data-edit]")) { ui.edit = true; render(); return; }
     if (t.closest("[data-doneedit]")) { ui.edit = false; render(); return; }
 
+    handleFuelClick(t);
     handleEditClick(t);
     handleDataClick(t);
     handleHistoryClick(t);
+  });
+
+  /* targets re-score every logged day, so redraw once the field settles */
+  viewEl.addEventListener("change", function (ev) {
+    if (ev.target.dataset && ev.target.dataset.target) render();
   });
 
   /* ---------- edit program ---------- */
@@ -1239,6 +1361,138 @@
       ui.edit = false;
       save(); render(); return;
     }
+  }
+
+  /* ---------- fuel ---------- */
+  function fuelDay(date) {
+    if (!state.fuel.days[date]) state.fuel.days[date] = {};
+    var d = state.fuel.days[date];
+    METRICS.forEach(function (m) { if (!Array.isArray(d[m.id])) d[m.id] = []; });
+    return d;
+  }
+
+  function fuelTotal(date, id) {
+    var arr = (state.fuel.days[date] || {})[id];
+    return Array.isArray(arr) ? arr.reduce(function (a, n) { return a + (Number(n) || 0); }, 0) : 0;
+  }
+
+  function fuelHit(date, id) { return fuelTotal(date, id) >= state.fuel.targets[id]; }
+
+  /* Trim trailing zeros so 1500 ml reads "1.5" and 3000 reads "3". */
+  function fuelNum(m, value) {
+    var n = value / m.per;
+    return String(Math.round(n * 100) / 100);
+  }
+
+  function dateOffset(days) {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    var mo = String(d.getMonth() + 1).padStart(2, "0");
+    var da = String(d.getDate()).padStart(2, "0");
+    return { key: d.getFullYear() + "-" + mo + "-" + da, initial: "SMTWTFS".charAt(d.getDay()) };
+  }
+
+  function fuelHTML() {
+    var today = todayKey();
+    var hits = METRICS.filter(function (m) { return fuelHit(today, m.id); }).length;
+
+    var cards = METRICS.map(function (m) {
+      var total = fuelTotal(today, m.id);
+      var target = state.fuel.targets[m.id];
+      var pct = Math.min(100, target > 0 ? (total / target) * 100 : 0);
+      var hit = total >= target;
+      var left = Math.max(0, target - total);
+      var logged = (state.fuel.days[today] || {})[m.id] || [];
+
+      return '<section class="card m-' + m.id + '"><div class="fuel-card">' +
+        '<div class="fuel-head">' +
+          '<div class="fuel-name"><span class="fuel-dot"></span>' + m.name + "</div>" +
+          '<div class="fuel-val"><b>' + fuelNum(m, total) + "</b> / " + fuelNum(m, target) + " " + m.unit + "</div>" +
+        "</div>" +
+        '<div class="meter" role="img" aria-label="' + m.name + " " + fuelNum(m, total) + " of " + fuelNum(m, target) + " " + m.unit +
+          '"><i style="width:' + pct.toFixed(1) + '%"></i></div>' +
+        '<div class="fuel-foot">' +
+          (hit
+            ? '<span class="fuel-hit">' + CHECK + " Goal hit</span>"
+            : '<span class="fuel-left">' + fuelNum(m, left) + " " + m.unit + " to go</span>") +
+          (logged.length ? '<button class="fuel-undo" data-undo="' + m.id + '">Undo last</button>' : "<span></span>") +
+        "</div>" +
+        '<div class="quick">' + m.quick.map(function (q) {
+          return '<button class="btn sm" data-add="' + m.id + '" data-amt="' + q + '">+' + q + (m.inputUnit || m.unit) + "</button>";
+        }).join("") + "</div>" +
+        '<div class="custom">' +
+          '<input type="number" inputmode="decimal" step="' + m.step + '" data-amtfor="' + m.id +
+            '" placeholder="Other (' + (m.inputUnit || m.unit) + ')" aria-label="Custom ' + m.name + ' amount">' +
+          '<button class="btn" data-addcustom="' + m.id + '">Add</button>' +
+        "</div>" +
+      "</div></section>";
+    }).join("");
+
+    /* seven days ending today; filled dot = target met */
+    var week = [];
+    for (var i = -6; i <= 0; i++) week.push(dateOffset(i));
+    var streak =
+      '<section class="card"><div class="fuel-card">' +
+        '<div class="lab">Last 7 days</div>' +
+        '<div class="week">' +
+          "<span></span>" + week.map(function (d) { return '<span class="week-h">' + d.initial + "</span>"; }).join("") +
+          METRICS.map(function (m) {
+            return '<span class="week-l">' + m.name + "</span>" +
+              week.map(function (d) {
+                return '<span class="m-' + m.id + '"><i class="' + (fuelHit(d.key, m.id) ? "on" : "") +
+                  '" title="' + m.name + " " + d.key + '"></i></span>';
+              }).join("");
+          }).join("") +
+        "</div>" +
+      "</div></section>";
+
+    var targets =
+      '<section class="card"><div class="fuel-card">' +
+        '<div class="lab">Daily targets</div>' +
+        METRICS.map(function (m) {
+          return '<div class="edit-pair">' +
+            '<input class="f mono" type="number" inputmode="decimal" step="' + m.step + '" data-target="' + m.id +
+              '" value="' + fuelNum(m, state.fuel.targets[m.id]) + '" aria-label="' + m.name + ' target">' +
+            '<div class="f" style="display:flex;align-items:center;border:0;background:none;padding-left:2px">' +
+              m.name + " <span class=\"per-hand\" style=\"margin-left:6px\">" + m.unit + " a day</span></div>" +
+          "</div>";
+        }).join("") +
+        '<p class="hint">Changing a target re-scores every day, including the ones already logged.</p>' +
+      "</div></section>";
+
+    return '<div class="sheet-head"><div><div class="eyebrow">' + hits + " of " + METRICS.length +
+      ' goals hit today</div><h1>Fuel</h1></div></div>' + cards + streak + targets;
+  }
+
+  function handleFuelClick(t) {
+    var add = t.closest("[data-add]");
+    if (add) { addFuel(add.dataset.add, Number(add.dataset.amt)); return; }
+
+    var custom = t.closest("[data-addcustom]");
+    if (custom) {
+      var id = custom.dataset.addcustom;
+      var input = viewEl.querySelector('[data-amtfor="' + id + '"]');
+      var v = parseFloat(input.value);
+      if (!isFinite(v) || v === 0) { input.focus(); return; }
+      addFuel(id, v);
+      return;
+    }
+
+    var undo = t.closest("[data-undo]");
+    if (undo) {
+      var arr = fuelDay(todayKey())[undo.dataset.undo];
+      arr.pop();
+      save();
+      render();
+      return;
+    }
+  }
+
+  function addFuel(id, amount) {
+    if (!isFinite(amount) || amount === 0) return;
+    fuelDay(todayKey())[id].push(amount);
+    save();
+    render();
   }
 
   /* ---------- finishing a workout ---------- */
@@ -1530,6 +1784,7 @@
           v: 1,
           program: normalize(parsed.program),
           sessions: normalizeSessions(parsed.sessions),
+          fuel: normalizeFuel(parsed.fuel),
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
           theme: parsed.theme || "system",
