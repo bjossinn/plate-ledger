@@ -767,7 +767,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.7.0";
+  var VERSION = "1.7.1";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2317,6 +2317,13 @@
     return date >= cutoff.toISOString().slice(0, 10);
   }
 
+  /* Sessions restored from the cloud, or logged before timestamps existed, have
+     no clock reading. Fall back to their date rather than to now, or syncing an
+     old log would post the whole thing as if it happened this afternoon. */
+  function eventTime(s) {
+    return s.finishedAt || s.startedAt || Date.parse(s.date + "T18:00:00") || Date.now();
+  }
+
   function eventRows() {
     var out = [], seen = {};
     function add(type, key, payload, at) {
@@ -2330,20 +2337,18 @@
 
     for (var k in state.sessions) {
       var s = state.sessions[k];
-      if (!withinWindow(s.date) || doneCount(s) === 0) continue;
-      var base = { day: s.dayName, unit: state.unit };
-      add("workout_started", "start:" + s.key, base, s.startedAt);
-      if (s.finished) {
-        add("workout_finished", "finish:" + s.key,
-            { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit },
-            s.finishedAt || s.startedAt);
-        recordsIn(s).forEach(function (r) {
-          add("pr", ["pr", r.name, s.date, r.w, r.r].join(":"),
-              { exercise: r.name, weight: r.w, reps: r.r, per_hand: !!r.each,
-                e1rm: Math.round(r.e1rm * 10) / 10, unit: state.unit },
-              s.finishedAt || s.startedAt);
-        });
-      }
+      /* Only finished workouts are worth announcing. "Started" fired on every
+         sync of an in-progress session, which mostly meant the feed shouted
+         each time the app was opened. */
+      if (!withinWindow(s.date) || !s.finished || doneCount(s) === 0) continue;
+      var when = eventTime(s);
+      add("workout_finished", "finish:" + s.key,
+          { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit }, when);
+      recordsIn(s).forEach(function (r) {
+        add("pr", ["pr", r.name, s.date, r.w, r.r].join(":"),
+            { exercise: r.name, weight: r.w, reps: r.r, per_hand: !!r.each,
+              e1rm: Math.round(r.e1rm * 10) / 10, unit: state.unit }, when);
+      });
     }
 
     for (var date in state.fuel.days) {
@@ -2589,8 +2594,12 @@
         outgoing.map(function (l) { return esc(nameOf(otherSide(l))); }).join(", ") + " to accept.</p>"
       : "";
 
-    var feed = (state.social.feed || []).length
-      ? '<section class="card">' + state.social.feed.map(function (ev) {
+    /* older "started" rows are already in the database and cannot be deleted
+       from the client, so they are filtered out here instead */
+    var events = (state.social.feed || []).filter(function (ev) { return ev.type !== "workout_started"; });
+
+    var feed = events.length
+      ? '<section class="card">' + events.map(function (ev) {
           var look = EVENT_LOOK[ev.type] || EVENT_LOOK.workout_finished;
           var sub = feedSub(ev);
           return '<div class="feed-item" style="--e: ' + look.color + '">' +

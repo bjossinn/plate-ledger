@@ -47,8 +47,10 @@ tested by attacking it (see the two-tier sharing rules in that file).
 
 ### Friends and activity
 
-Add people by handle, accept or ignore requests, and see a shared feed of workouts started and
-finished, records set and daily goals hit — yours and theirs together.
+Add people by handle, accept or ignore requests, and see a shared feed of finished workouts,
+records set and daily goals hit — yours and theirs together. Only finished workouts are
+announced; a "started" event fired on every sync of an in-progress session, which mostly meant
+the feed shouted each time the app was opened.
 
 Sharing is two-tier and the tiers are enforced in Postgres, not in the UI. Accepted friends see
 **summaries** automatically: day name, date, sets, volume, PRs, fuel totals. Your **individual
