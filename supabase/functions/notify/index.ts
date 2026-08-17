@@ -44,11 +44,17 @@ const json = (body: unknown, status = 200) =>
 
 /** A dead subscription 404s or 410s forever; drop it rather than retrying it daily. */
 async function sendTo(userIds: string[], payload: unknown) {
-  if (!userIds.length) return 0;
-  const { data: subs } = await admin
+  if (!userIds.length) {
+    console.log("sendTo: nobody to send to");
+    return 0;
+  }
+  const { data: subs, error } = await admin
     .from("push_subscriptions")
     .select("*")
     .in("user_id", userIds);
+
+  if (error) console.log("sendTo: subscription lookup failed —", error.message);
+  console.log(`sendTo: ${userIds.length} recipient(s), ${subs?.length ?? 0} subscription(s)`);
 
   let sent = 0;
   for (const s of subs ?? []) {
@@ -58,10 +64,13 @@ async function sendTo(userIds: string[], payload: unknown) {
         JSON.stringify(payload),
       );
       sent++;
+      console.log("sendTo: delivered to", s.endpoint.slice(0, 48));
     } catch (err) {
       const code = (err as { statusCode?: number }).statusCode;
+      console.log(`sendTo: FAILED (${code ?? "no status"}) ${s.endpoint.slice(0, 48)} — ${String(err).slice(0, 200)}`);
       if (code === 404 || code === 410) {
         await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
+        console.log("sendTo: dropped a dead subscription");
       }
     }
   }
@@ -113,7 +122,7 @@ async function fanout(req: Request) {
   // only what landed in the last few minutes, so a re-sync of old history
   // cannot spam anyone's lock screen
   const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  const { data: events } = await admin
+  const { data: events, error: evErr } = await admin
     .from("events")
     .select("type,payload,created_at,notified")
     .eq("user_id", userId)
@@ -122,9 +131,16 @@ async function fanout(req: Request) {
     .order("created_at", { ascending: false })
     .limit(10);
 
+  if (evErr) {
+    console.log("fanout: event lookup failed —", evErr.message);
+    return json({ error: evErr.message }, 500);
+  }
+
+  console.log(`fanout: ${who} has ${events?.length ?? 0} unannounced event(s) since ${since}`);
   if (!events?.length) return json({ sent: 0, events: 0 });
 
   const friends = await friendsOf(userId);
+  console.log(`fanout: ${friends.length} accepted friend(s)`);
   let sent = 0;
   for (const ev of events) {
     const { title, body } = describe(ev, who);
@@ -134,6 +150,7 @@ async function fanout(req: Request) {
   await admin.from("events").update({ notified: true })
     .eq("user_id", userId).eq("notified", false).gte("created_at", since);
 
+  console.log(`fanout: done — ${sent} push(es) accepted for ${events.length} event(s)`);
   return json({ sent, events: events.length });
 }
 
@@ -189,9 +206,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const body = await req.json().catch(() => ({}));
+    console.log("notify: invoked, kind =", body.kind ?? "fanout");
     if (body.kind === "reminder") return await reminder(req);
     return await fanout(req);
   } catch (err) {
+    console.log("notify: unhandled error —", String(err));
     return json({ error: String(err) }, 500);
   }
 });

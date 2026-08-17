@@ -116,6 +116,9 @@
     line-height: 1.45;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
+    /* kills iOS double-tap-to-zoom, which fires when you tap +5g twice in a
+       row. Pinch zoom is untouched, so the page can still be enlarged. */
+    touch-action: manipulation;
   }
 
   .num { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
@@ -767,7 +770,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.8.1";
+  var VERSION = "1.8.2";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2547,6 +2550,20 @@
     });
   }
 
+  /* Registering with the push service fails intermittently — observed first-tap
+     failures that succeed seconds later with nothing changed. Retry rather than
+     making someone tap the button twice and assume it is broken. */
+  function subscribeWithRetry(reg, attemptsLeft) {
+    return reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: b64ToBytes(VAPID_PUBLIC)
+    }).catch(function (err) {
+      if (attemptsLeft <= 1) throw err;
+      return new Promise(function (resolve) { setTimeout(resolve, 1500); })
+        .then(function () { return subscribeWithRetry(reg, attemptsLeft - 1); });
+    });
+  }
+
   function enablePush() {
     push.error = null;
     if (!pushSupported()) {
@@ -2566,10 +2583,7 @@
       })
       .then(function (reg) {
         return reg.pushManager.getSubscription().then(function (existing) {
-          return existing || reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: b64ToBytes(VAPID_PUBLIC)
-          });
+          return existing || subscribeWithRetry(reg, 3);
         });
       })
       .then(function (sub) { return withSession().then(function () { return storeSubscription(sub); }); })
