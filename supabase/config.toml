@@ -1,0 +1,5 @@
+# Minimal config so the CLI recognises this folder as a Supabase project.
+project_id = "kjaoltyumjmcunyvhmvb"
+
+[functions.notify]
+verify_jwt = true
