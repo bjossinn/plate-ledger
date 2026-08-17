@@ -41,6 +41,10 @@ local log untouched; the cloud copy is a copy, not a migration.
 Sync is a full idempotent upsert keyed on `(user_id, client_key)`, not a change log. At this
 data volume a re-sync that *cannot* duplicate beats a delta that can drift.
 
+The **program follows the account** too. Edits are timestamped and the newer side wins, with one
+deliberate exception: a device syncing for the first time treats an untouched default program as
+old, so signing in on a new phone pulls your real program instead of pushing the starter one over it.
+
 Schema and the security model: [supabase/schema.sql](supabase/schema.sql). The publishable key
 sits in this public repo by design — row-level security is the entire boundary, and it is
 tested by attacking it (see the two-tier sharing rules in that file).

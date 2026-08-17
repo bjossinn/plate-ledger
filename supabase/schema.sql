@@ -155,6 +155,16 @@ create table if not exists public.events (
   created_at timestamptz not null default now()
 );
 
+-- --------------------------------------------------------------- programs
+-- The whole program as one document, because that is how it is edited. Kept
+-- private: sending a day to a friend goes through shared_days, deliberately,
+-- so sharing is always an act rather than a side effect of being friends.
+create table if not exists public.programs (
+  user_id    uuid primary key references public.profiles(id) on delete cascade,
+  days       jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------ shared days
 -- A training day sent to one friend. Re-sending the same day updates this row
 -- and bumps version, so the recipient is offered an update rather than a
@@ -219,6 +229,7 @@ alter table public.session_details    enable row level security;
 alter table public.fuel_days          enable row level security;
 alter table public.prs                enable row level security;
 alter table public.events             enable row level security;
+alter table public.programs          enable row level security;
 alter table public.shared_days       enable row level security;
 alter table public.push_subscriptions enable row level security;
 
@@ -320,6 +331,11 @@ create policy events_read on public.events for select to authenticated
 drop policy if exists events_write on public.events;
 create policy events_write on public.events for insert to authenticated
   with check (user_id = auth.uid());
+
+-- programs: yours alone
+drop policy if exists programs_own on public.programs;
+create policy programs_own on public.programs for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- shared days: both sides of the exchange can read it; only the owner writes,
 -- and only to someone who is actually an accepted friend

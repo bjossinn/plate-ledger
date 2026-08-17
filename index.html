@@ -770,7 +770,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.9.0";
+  var VERSION = "1.10.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -843,6 +843,15 @@
     return program;
   }
 
+  function normalizeCloud(c) {
+    var v = (c && typeof c === "object") ? c : {};
+    return {
+      lastSyncAt: v.lastSyncAt || null,
+      programAt: Number(v.programAt) || 0,
+      programSnap: typeof v.programSnap === "string" ? v.programSnap : ""
+    };
+  }
+
   function normalizeFuel(fuel) {
     var f = fuel && typeof fuel === "object" ? fuel : defaultFuel();
     var d = defaultTargets();
@@ -909,10 +918,11 @@
   function defaultState() {
     return {
       v: 1,
-      program: defaultProgram(),
+      program: normalize(defaultProgram()),   /* same shape as a loaded one, so
+                                                 an untouched program compares equal */
       sessions: {},
       fuel: defaultFuel(),
-      cloud: { lastSyncAt: null },
+      cloud: { lastSyncAt: null, programAt: 0, programSnap: "" },
       social: defaultSocial(),
       unit: "kg",
       rest: 120,
@@ -936,7 +946,7 @@
           program: normalize(saved.program),
           sessions: normalizeSessions(saved.sessions),
           fuel: normalizeFuel(saved.fuel),
-          cloud: (saved.cloud && typeof saved.cloud === "object") ? saved.cloud : { lastSyncAt: null },
+          cloud: normalizeCloud(saved.cloud),
           social: normalizeSocial(saved.social),
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
@@ -2042,7 +2052,7 @@
           program: normalize(parsed.program),
           sessions: normalizeSessions(parsed.sessions),
           fuel: normalizeFuel(parsed.fuel),
-          cloud: (parsed.cloud && typeof parsed.cloud === "object") ? parsed.cloud : { lastSyncAt: null },
+          cloud: normalizeCloud(parsed.cloud),
           social: normalizeSocial(parsed.social),
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
@@ -2275,6 +2285,60 @@
     return out;
   }
 
+  /* ---- the program itself ----
+     One document, last edit wins. The trap is a phone that has just signed in:
+     its program is the untouched default, and pushing that would wipe the real
+     one. So local edits are timestamped, and whichever side is newer wins —
+     which makes a fresh device pull rather than clobber. */
+  function programJSON() { return JSON.stringify(state.program); }
+
+  function isUntouchedProgram() {
+    return programJSON() === JSON.stringify(normalize(defaultProgram()));
+  }
+
+  function syncProgram() {
+    if (!state.cloud.programSnap) {
+      /* First sync from this device. There is no snapshot to compare against,
+         so "has it changed?" is the wrong question — an untouched default must
+         count as old, or signing in on a new phone would push the starter
+         program over the real one. Something actually built here counts as new. */
+      state.cloud.programAt = isUntouchedProgram() ? 0 : Date.now();
+    } else if (programJSON() !== state.cloud.programSnap) {
+      state.cloud.programAt = Date.now();   /* edited since the last sync */
+    }
+
+    return api("/rest/v1/programs?user_id=eq." + auth.user_id + "&select=days,updated_at")
+      .then(function (rows) {
+        var remote = rows && rows[0];
+        var remoteAt = remote ? Date.parse(remote.updated_at) : 0;
+        var remoteDays = (remote && Array.isArray(remote.days)) ? remote.days : [];
+
+        /* never let an empty or older cloud copy overwrite what is in hand */
+        if (remoteDays.length && remoteAt > (state.cloud.programAt || 0)) {
+          state.program = normalize(remoteDays);
+          if (!getDay(state.day)) state.day = state.program[0] && state.program[0].id;
+          state.cloud.programAt = remoteAt;
+          state.cloud.programSnap = programJSON();
+          save();
+          timerDay = null;
+          render();
+          return;
+        }
+
+        return api("/rest/v1/programs?on_conflict=user_id", {
+          method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+          body: [{
+            user_id: auth.user_id,
+            days: state.program,
+            updated_at: new Date(state.cloud.programAt || Date.now()).toISOString()
+          }]
+        }).then(function () {
+          state.cloud.programSnap = programJSON();
+          save();
+        });
+      });
+  }
+
   function upsert(table, rows, conflict) {
     if (!rows.length) return Promise.resolve([]);
     return api("/rest/v1/" + table + "?on_conflict=" + conflict, {
@@ -2292,6 +2356,7 @@
 
     var sessions = syncableSessions();
     return withSession()
+      .then(syncProgram)
       .then(function () { return upsert("sessions", sessions.map(sessionRow), "user_id,client_key"); })
       .then(function (saved) {
         var idFor = {};
@@ -2314,8 +2379,17 @@
   }
 
   /* Pull everything back — the point of the cloud copy is a phone you lost. */
-  function restoreFromCloud() {
-    if (!auth || sync.busy) return Promise.resolve();
+  /* Wait for an in-flight sync rather than quietly doing nothing. Pressing
+     Restore while the automatic sync happens to be running is common, and
+     silence looks identical to a broken button. */
+  function restoreFromCloud(waited) {
+    if (!auth) return Promise.resolve();
+    if (sync.busy) {
+      /* generous: the sync it is waiting on may be uploading a whole history */
+      if ((waited || 0) > 90) { sync.error = "Still syncing — try again in a moment."; render(); return Promise.resolve(); }
+      return new Promise(function (go) { setTimeout(go, 400); })
+        .then(function () { return restoreFromCloud((waited || 0) + 1); });
+    }
     sync.busy = true;
     sync.error = null;
     repaintIfData();
@@ -2325,11 +2399,19 @@
         return Promise.all([
           api("/rest/v1/sessions?user_id=eq." + auth.user_id + "&select=*"),
           api("/rest/v1/session_details?user_id=eq." + auth.user_id + "&select=*"),
-          api("/rest/v1/fuel_days?user_id=eq." + auth.user_id + "&select=*")
+          api("/rest/v1/fuel_days?user_id=eq." + auth.user_id + "&select=*"),
+          api("/rest/v1/programs?user_id=eq." + auth.user_id + "&select=days,updated_at")
         ]);
       })
       .then(function (res) {
         var remote = res[0] || [], details = res[1] || [], fuel = res[2] || [];
+        var prog = (res[3] || [])[0];
+        if (prog && Array.isArray(prog.days) && prog.days.length) {
+          state.program = normalize(prog.days);
+          if (!getDay(state.day)) state.day = state.program[0] && state.program[0].id;
+          state.cloud.programAt = Date.parse(prog.updated_at) || Date.now();
+          state.cloud.programSnap = JSON.stringify(state.program);
+        }
         var entriesFor = {};
         details.forEach(function (d) { entriesFor[d.session_id] = d.entries || {}; });
 
@@ -3104,7 +3186,10 @@
         (sync.restored ? " · restored " + sync.restored + " session" + (sync.restored === 1 ? "" : "s") : "") + "</p>" +
       '<div class="segs">' +
         '<button class="btn day" data-syncnow' + (sync.busy ? " disabled" : "") + ">Sync now</button>" +
-        '<button class="btn" data-restore-cloud' + (sync.busy ? " disabled" : "") + ">Restore</button>" +
+        /* deliberately NOT disabled while syncing — the moment you most want
+           this is right after signing in, which is exactly when a sync is
+           running. It waits for the sync instead of being unclickable. */
+        '<button class="btn" data-restore-cloud>Restore</button>' +
       "</div>" +
       '<button class="btn" data-signout>Sign out</button>' +
     "</div></section>";
