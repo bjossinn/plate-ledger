@@ -807,7 +807,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.14.1";
+  var VERSION = "1.14.2";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2603,10 +2603,11 @@
 
         fuel.forEach(function (f) {
           if (state.fuel.days[f.date]) return;
+          var at = Date.parse(f.updated_at) || 0;
           state.fuel.days[f.date] = {
-            protein: Number(f.protein) ? [{ v: Number(f.protein), t: 0 }] : [],
-            creatine: Number(f.creatine) ? [{ v: Number(f.creatine), t: 0 }] : [],
-            water: Number(f.water) ? [{ v: Number(f.water), t: 0 }] : []
+            protein: Number(f.protein) ? [{ v: Number(f.protein), t: at }] : [],
+            creatine: Number(f.creatine) ? [{ v: Number(f.creatine), t: at }] : [],
+            water: Number(f.water) ? [{ v: Number(f.water), t: at }] : []
           };
         });
 
@@ -2678,7 +2679,7 @@
         add("goal_hit", ["goal", m.id, date].join(":"),
             { metric: m.id, name: m.name, total: fuelNum(m, fuelTotal(date, m.id)),
               target: fuelNum(m, state.fuel.targets[m.id]), unit: m.unit },
-            fuelHitAt(date, m.id) || Date.parse(date + "T12:00:00"));
+            fuelHitAt(date, m.id) || Math.min(Date.parse(date + "T12:00:00"), Date.now()));
       });
     }
     return out;
