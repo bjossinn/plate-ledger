@@ -83,7 +83,7 @@ only fires below **ideal x 0.6** — so a normal day never buzzes.
 
 | | 12:00 | 14:00 | 15:00 | 18:00 | 19:00 | 20:00 | 21:00 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Water | 30% | | 55% | 80% | 88% | | |
+| Water | 30% | | 55% | | 88% | | |
 | Protein | | 40% | | 70% | | 90% | |
 | Creatine | | | | | | | any |
 
@@ -91,8 +91,8 @@ Water is linear because it is drunk through the day. Protein is not — it arriv
 checkpoints sit just *after* people eat rather than nagging at 11:30 for not having had lunch.
 Creatine is one dose, where pace means nothing, so it is checked once and only if untouched.
 
-At most two nudges per metric per day, and one notification per checkpoint however many metrics
-are behind. Water stops at 19:00 because telling someone at 22:00 that they owe 2.5 L is bad
+At most two nudges per metric per day, and each checkpoint owns a single metric so two can never
+land at once. Water stops at 19:00 because telling someone at 22:00 that they owe 2.5 L is bad
 advice; creatine sits at 21:00 precisely because it is still perfectly actionable that late.
 
 ## Where the data lives
