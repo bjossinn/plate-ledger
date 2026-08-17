@@ -1,7 +1,7 @@
 {
   "name": "Plate Ledger",
   "short_name": "Plate Ledger",
-  "description": "A phone-first workout logger for a four-day upper/lower split.",
+  "description": "Log your lifts, fuel and records, and share the day with the people you train with.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

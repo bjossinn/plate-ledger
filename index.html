@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="A phone-first workout logger for a four-day upper/lower split.">
+<meta name="description" content="Log your lifts, fuel and records, and share the day with the people you train with.">
 <meta name="theme-color" content="#EDEEF0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1114" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1480,7 +1480,7 @@
     var s = currentSession();
     var cards = day.ex.map(function (ex) { return exerciseCardHTML(s, ex); }).join("");
 
-    var warn = store ? "" : '<div class="warn"><b>Storage is blocked in this view.</b> Your log will vanish when you close the page — open the artifact link directly in Safari, or copy a backup from the Data tab before you leave.</div>';
+    var warn = store ? "" : '<div class="warn"><b>This browser is blocking storage.</b> Nothing you log will survive closing the page. Private browsing is the usual cause — open the app normally, or copy a backup from the Data tab before you leave.</div>';
 
     return warn +
       '<div class="sheet-head"><div><div class="eyebrow">Day ' + (state.program.indexOf(day) + 1) + " of " + state.program.length + "</div><h1>" + esc(day.name) + "</h1></div>" +
@@ -2107,7 +2107,9 @@
 
       '<section class="card"><div class="edit-card">' +
         '<div class="lab">Backup</div>' +
-        '<p class="hint">' + sessions + ' logged session' + (sessions === 1 ? "" : "s") + ' live on this device only. Copy or download a backup now and again — pasting it back restores everything.</p>' +
+        '<p class="hint">' + sessions + " logged session" + (sessions === 1 ? "" : "s") + " on this phone" +
+          (auth ? ", mirrored to your account." : " and nowhere else — signing in adds a cloud copy.") +
+          ' A text backup depends on nothing at all, so it is worth taking now and again.</p>' +
         '<div class="segs"><button class="btn" data-copy>Copy backup</button>' +
         (downloads ? '<button class="btn" data-download>Download file</button>' : "") + "</div>" +
         '<div class="lab" style="margin-top:6px">Restore</div>' +
@@ -2123,7 +2125,7 @@
 
       '<section class="card"><div class="edit-card">' +
         '<div class="lab">Reset</div>' +
-        '<p class="hint">Puts the four-day upper/lower split back exactly as written. Your logged sessions are untouched.</p>' +
+        '<p class="hint">Puts the starting upper/lower split back as it shipped, losing any days you have added or edited. Your logged sessions are untouched.</p>' +
         '<button class="btn danger" data-resetprog>Reset program to default</button>' +
         '<button class="btn danger" data-wipe>Erase everything</button>' +
       "</div></section>";
@@ -2229,7 +2231,7 @@
     }
 
     if (t.closest("[data-resetprog]")) {
-      if (!confirm("Reset the program to the original four-day split?")) return;
+      if (!confirm("Reset the program to the one it shipped with? Days you have added or edited are lost.")) return;
       state.program = defaultProgram();
       state.day = "d1";
       save(); render(); return;
@@ -3124,7 +3126,7 @@
   function friendsHTML() {
     if (!auth) {
       return '<div class="sheet-head"><div><div class="eyebrow">Friends</div><h1>Better together</h1></div></div>' +
-        '<div class="empty"><b>Sign in first</b>Friends hang off your account. Create one under Data and pick a handle — that handle is how people find you.</div>';
+        '<div class="empty"><b>Sign in first</b>Friends are tied to your account. Create one under Data and pick a handle — that handle is how people find you.</div>';
     }
     if (!auth.handle) {
       return '<div class="sheet-head"><div><div class="eyebrow">Friends</div><h1>Pick a handle</h1></div></div>' +
@@ -3343,7 +3345,7 @@
     if (!auth) {
       return '<section class="card"><div class="edit-card">' +
         '<div class="lab">Account</div>' +
-        '<p class="hint">Your log lives on this phone. Signing in keeps a copy in the cloud, so a lost phone is not a lost year — and it is what friends will hang off later.</p>' +
+        '<p class="hint">Your log lives on this phone. Signing in keeps a copy in the cloud, so a lost phone is not a lost year, and lets you add the people you train with.</p>' +
         '<input class="f" type="email" id="authEmail" placeholder="Email" autocomplete="email" aria-label="Email">' +
         '<input class="f" type="password" id="authPass" placeholder="Password" autocomplete="current-password" aria-label="Password">' +
         '<div class="segs"><button class="btn day" data-signin>Sign in</button>' +

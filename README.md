@@ -1,6 +1,7 @@
 # Plate Ledger
 
-A phone-first workout logger for a four-day upper/lower split. Tick sets as you finish them,
+A phone-first workout logger. It starts as a four-day upper/lower split and is yours to edit.
+Tick sets as you finish them,
 log the weight and the reps you actually got, and edit the program whenever it changes.
 
 **Live: https://bjossinn.github.io/plate-ledger/**
@@ -77,11 +78,15 @@ Only accepted friends can send you a day; the database rejects it otherwise.
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the
-program, every session, and your settings. There is no server and no account, so:
+program, every session, and your settings. That copy is the source of truth: the app works with
+no signal and no account, and everything below is optional on top of it.
 
-- Your log never leaves your device, and two people using the same URL never see each other's numbers.
-- Clearing site data erases it. Use **Data → Copy backup** now and again; **Restore from text** reads it back.
-- The log does not follow you between devices or between Safari and the installed Home Screen app.
+- **Signed out**, the log never leaves the device and does not follow you between browsers or to
+  the installed Home Screen app, which have separate storage.
+- **Signed in**, sessions, fuel, records and the program are mirrored to Postgres, and **Restore**
+  pulls them onto a new phone. Friends see only what the sharing rules allow.
+- Clearing site data erases the local copy either way. **Data → Copy backup** is a plain-text
+  escape hatch that depends on neither the browser nor the server; **Restore from text** reads it back.
 
 ## Structure
 
@@ -92,7 +97,9 @@ Plain static files, no build step and no dependencies.
 | `index.html` | The whole app — markup, styles and logic in one file |
 | `sw.js` | Service worker; caches the shell so the app opens without a signal |
 | `manifest.webmanifest` | Installability, name, icons, standalone display |
-| `favicon.svg`, `icon-*.png`, `apple-touch-icon.png` | Icons |
+| `favicon-32.png`, `icon-*.png`, `apple-touch-icon.png` | Icons |
+| `supabase/schema.sql` | Tables, row-level security and the sharing rules |
+| `supabase/functions/notify/` | Edge function that sends push notifications |
 
 To work on it, open `index.html` in a browser. To test the service worker you need to serve it
 over HTTP rather than `file://`:
