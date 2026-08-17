@@ -806,7 +806,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.13.0";
+  var VERSION = "1.13.1";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -1270,6 +1270,10 @@
     appEl.classList.toggle("no-bottom", !show);
     restBannerEl.hidden = !restOver;
     bottomRowEl.hidden = restOver;
+    /* Fuel keeps the goal progress but not the rest timer, which belongs to
+       lifting — unless a rest is genuinely counting down, in which case it
+       should stay in sight wherever you are. */
+    timerEl.hidden = !(ui.view === "train" || timerEnd);
   }
 
   restBannerEl.addEventListener("click", clearRestOver);
