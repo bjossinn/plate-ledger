@@ -807,7 +807,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.14.0";
+  var VERSION = "1.14.1";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2340,7 +2340,17 @@
   function signIn(email, password) {
     return api("/auth/v1/token?grant_type=password",
                { method: "POST", anon: true, body: { email: email, password: password } })
-      .then(adoptSession);
+      .then(adoptSession)
+      .catch(function (err) {
+        /* The server answers "Invalid login credentials" whether the password
+           is wrong OR the address has no account — deliberately, so nobody can
+           probe for registered emails. Repeating that verbatim sends people
+           hunting for a password problem when the address is the culprit. */
+        if (/invalid.*credential|invalid_grant/i.test(err.message || "")) {
+          throw new Error("No account matches that email and password. Check the email first — a wrong address looks exactly like a wrong password here.");
+        }
+        throw err;
+      });
   }
 
   function signOut() {
