@@ -2,15 +2,16 @@
    Strategy: serve from cache immediately, refresh the cache in the background,
    so the app opens in a basement gym and still picks up updates next launch. */
 
-var CACHE = "plate-ledger-1.13.1";
+var CACHE = "plate-ledger-1.14.0";
 var SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./favicon.svg",
+  "./favicon-32.png",
   "./apple-touch-icon.png",
   "./icon-192.png",
-  "./icon-512.png"
+  "./icon-512.png",
+  "./icon-maskable-512.png"
 ];
 
 self.addEventListener("install", function (event) {
