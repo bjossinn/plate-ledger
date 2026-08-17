@@ -528,7 +528,14 @@
     background: color-mix(in srgb, var(--e) var(--tint), var(--surface-2));
     color: var(--e);
   }
+  .feed-ico { font-size: 15px; line-height: 1; }
   .feed-ico svg { width: 15px; height: 15px; }
+  .feed-headline {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -.015em;
+    margin-top: 2px;
+  }
   .feed-body { min-width: 0; }
   .feed-line { font-size: 13.5px; line-height: 1.4; }
   .feed-line b { font-weight: 700; }
@@ -770,7 +777,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.10.0";
+  var VERSION = "1.11.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2484,8 +2491,15 @@
          each time the app was opened. */
       if (!withinWindow(s.date) || !s.finished || doneCount(s) === 0) continue;
       var when = eventTime(s);
+      var lifts = 0;
+      for (var exId in s.entries) {
+        if (s.entries[exId].sets.some(function (x) { return x.done; })) lifts++;
+      }
+      var mins = (s.finishedAt && s.startedAt && s.finishedAt > s.startedAt)
+        ? Math.round((s.finishedAt - s.startedAt) / 60000) : 0;
       add("workout_finished", "finish:" + s.key,
-          { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit }, when);
+          { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit,
+            lifts: lifts, minutes: mins > 0 && mins < 600 ? mins : 0, prs: recordsIn(s).length }, when);
       recordsIn(s).forEach(function (r) {
         add("pr", ["pr", r.name, s.date, r.w, r.r].join(":"),
             { exercise: r.name, weight: r.w, reps: r.r, per_hand: !!r.each,
@@ -2878,12 +2892,20 @@
     return "Synced " + Math.floor(mins / 1440) + "d ago";
   }
 
-  var EVENT_LOOK = {
-    workout_started:  { color: "var(--plate-blue)",  icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>' },
-    workout_finished: { color: "var(--plate-green)", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' },
-    pr:               { color: "var(--plate-yellow)", icon: STAR },
-    goal_hit:         { color: "var(--met-water)",   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>' }
+  var METRIC_LOOK = {
+    protein:  { emoji: "\ud83c\udf57", color: "var(--met-protein)" },
+    creatine: { emoji: "\u26a1", color: "var(--met-creatine)" },
+    water:    { emoji: "\ud83d\udca7", color: "var(--met-water)" }
   };
+
+  function eventLook(ev) {
+    if (ev.type === "goal_hit") {
+      return METRIC_LOOK[(ev.payload || {}).metric] || { emoji: "\ud83c\udfaf", color: "var(--met-water)" };
+    }
+    if (ev.type === "pr") return { emoji: "\ud83c\udfc6", color: "var(--plate-yellow)" };
+    if (ev.type === "workout_finished") return { emoji: "\ud83c\udfcb\ufe0f", color: "var(--plate-green)" };
+    return { emoji: "\u2022", color: "var(--plate-blue)" };
+  }
 
   function ago(iso) {
     var mins = Math.floor((Date.now() - Date.parse(iso)) / 60000);
@@ -2893,24 +2915,47 @@
     return Math.floor(mins / 1440) + "d";
   }
 
+  /* "You hit THEIR water goal" was the bug — the possessive has to follow the
+     person, not the sentence template. */
+  function possessive(userId) { return userId === (auth && auth.user_id) ? "your" : "their"; }
+
   function feedLine(ev) {
     var who = "<b>" + esc(nameOf(ev.user_id)) + "</b>";
     var p = ev.payload || {};
-    if (ev.type === "workout_started") return who + " started " + esc(p.day || "a workout");
-    if (ev.type === "workout_finished") return who + " finished " + esc(p.day || "a workout");
-    if (ev.type === "pr") return who + " set a record on " + esc(p.exercise || "a lift");
-    if (ev.type === "goal_hit") return who + " hit their " + esc((p.name || "").toLowerCase() || "daily") + " goal";
-    return who + " did something";
+    if (ev.type === "workout_finished") return who + " finished an exercise";
+    if (ev.type === "pr") return who + " set a personal record";
+    if (ev.type === "goal_hit") {
+      return who + " hit " + possessive(ev.user_id) + " " +
+             esc((p.name || "daily").toLowerCase()) + " goal";
+    }
+    return who + " logged something";
+  }
+
+  /* The line under the sentence: what it actually was. Workouts and records
+     earn one; a goal does not, because its numbers already say everything. */
+  function feedHeadline(ev) {
+    var p = ev.payload || {};
+    if (ev.type === "workout_finished") return esc(p.day || "A workout");
+    if (ev.type === "pr") return esc(p.exercise || "A lift");
+    return "";
   }
 
   function feedSub(ev) {
     var p = ev.payload || {};
     if (ev.type === "workout_finished") {
-      return p.sets + " sets · " + Number(p.volume || 0).toLocaleString() + " " + esc(p.unit || "kg");
+      var bits = [p.sets + " set" + (Number(p.sets) === 1 ? "" : "s")];
+      if (p.lifts) bits.push("across " + p.lifts + " exercise" + (Number(p.lifts) === 1 ? "" : "s"));
+      bits.push(Number(p.volume || 0).toLocaleString() + " " + esc(p.unit || "kg"));
+      if (p.minutes) {
+        var h = Math.floor(p.minutes / 60), m = p.minutes % 60;
+        bits.push(h ? h + "h " + m + "m" : m + " min");
+      }
+      if (p.prs) bits.push(p.prs + " record" + (Number(p.prs) === 1 ? "" : "s") + " \ud83c\udfc6");
+      return bits.join(" \u00b7 ");
     }
     if (ev.type === "pr") {
-      return esc(p.weight) + " × " + esc(p.reps) + (p.per_hand ? " per hand" : "") +
-             (p.e1rm ? " · est. 1RM " + esc(p.e1rm) + " " + esc(p.unit || "kg") : "");
+      return esc(p.weight) + " \u00d7 " + esc(p.reps) + (p.per_hand ? " per hand" : "") +
+             (p.e1rm ? " \u00b7 est. 1RM " + esc(p.e1rm) + " " + esc(p.unit || "kg") : "");
     }
     if (ev.type === "goal_hit") return esc(p.total) + " / " + esc(p.target) + " " + esc(p.unit || "");
     return "";
@@ -3011,11 +3056,13 @@
 
     var feed = events.length
       ? '<section class="card">' + events.map(function (ev) {
-          var look = EVENT_LOOK[ev.type] || EVENT_LOOK.workout_finished;
+          var look = eventLook(ev);
+          var head = feedHeadline(ev);
           var sub = feedSub(ev);
           return '<div class="feed-item" style="--e: ' + look.color + '">' +
-            '<span class="feed-ico">' + look.icon + "</span>" +
+            '<span class="feed-ico">' + look.emoji + "</span>" +
             '<span class="feed-body"><span class="feed-line">' + feedLine(ev) + "</span>" +
+              (head ? '<div class="feed-headline">' + head + "</div>" : "") +
               (sub ? '<div class="feed-sub">' + sub + "</div>" : "") + "</span>" +
             '<span class="feed-when">' + esc(ago(ev.created_at)) + "</span>" +
           "</div>";

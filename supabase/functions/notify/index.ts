@@ -86,26 +86,43 @@ async function friendsOf(userId: string) {
   return (data ?? []).map((f) => (f.requester === userId ? f.addressee : f.requester));
 }
 
+const METRIC_EMOJI: Record<string, string> = { protein: "🍗", creatine: "⚡", water: "💧" };
+
+/** Wording deliberately mirrors the in-app feed, so a lock screen and the
+    Friends tab do not describe the same event two different ways. */
 function describe(ev: { type: string; payload: Record<string, unknown> }, who: string) {
   const p = ev.payload ?? {};
+
   if (ev.type === "workout_finished") {
+    const bits = [`${p.sets ?? 0} set${Number(p.sets) === 1 ? "" : "s"}`];
+    if (p.lifts) bits.push(`across ${p.lifts} exercise${Number(p.lifts) === 1 ? "" : "s"}`);
+    bits.push(`${Number(p.volume ?? 0).toLocaleString()} ${p.unit ?? "kg"}`);
+    if (p.minutes) {
+      const h = Math.floor(Number(p.minutes) / 60), m = Number(p.minutes) % 60;
+      bits.push(h ? `${h}h ${m}m` : `${m} min`);
+    }
+    if (p.prs) bits.push(`${p.prs} record${Number(p.prs) === 1 ? "" : "s"} 🏆`);
     return {
-      title: `${who} finished ${p.day ?? "a workout"}`,
-      body: `${p.sets ?? 0} sets · ${Number(p.volume ?? 0).toLocaleString()} ${p.unit ?? "kg"}`,
+      title: `🏋️ ${who} finished an exercise`,
+      body: `${p.day ?? "A workout"} — ${bits.join(" · ")}`,
     };
   }
+
   if (ev.type === "pr") {
     return {
-      title: `${who} set a record`,
-      body: `${p.exercise ?? "A lift"} · ${p.weight}×${p.reps}${p.per_hand ? " per hand" : ""}`,
+      title: `🏆 ${who} set a personal record`,
+      body: `${p.exercise ?? "A lift"} — ${p.weight}×${p.reps}${p.per_hand ? " per hand" : ""}`,
     };
   }
+
   if (ev.type === "goal_hit") {
+    const emoji = METRIC_EMOJI[String(p.metric ?? "")] ?? "🎯";
     return {
-      title: `${who} hit their ${String(p.name ?? "daily").toLowerCase()} goal`,
+      title: `${emoji} ${who} hit their ${String(p.name ?? "daily").toLowerCase()} goal`,
       body: `${p.total} / ${p.target} ${p.unit ?? ""}`,
     };
   }
+
   return { title: `${who} logged something`, body: "" };
 }
 
