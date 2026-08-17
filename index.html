@@ -777,7 +777,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.11.0";
+  var VERSION = "1.12.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -1132,6 +1132,23 @@
     return true;
   }
 
+  /* Time under the bar, not time with the app open. The clock starts when the
+     first set is ticked — opening the day an hour before you lift should not
+     count as an hour of training. */
+  function sessionMinutes(s) {
+    var from = s.firstSetAt || s.startedAt || 0;
+    var to = s.finishedAt || 0;
+    if (!from || !to || to <= from) return 0;
+    var mins = Math.round((to - from) / 60000);
+    return (mins > 0 && mins < 600) ? mins : 0;   /* ignore a forgotten session */
+  }
+
+  function fmtMinutes(mins) {
+    if (!mins) return "";
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return h ? h + "h " + m + "m" : m + " min";
+  }
+
   function plannedSets(day, session) {
     return day.ex.reduce(function (a, ex) {
       var e = session.entries[ex.id];
@@ -1399,6 +1416,7 @@
       var rIn = row.querySelector('[data-f="r"]');
       st.done = !st.done;
       if (st.done) {
+        if (!s.firstSetAt) s.firstSetAt = Date.now();   /* the session really starts here */
         if (!st.w && wIn.placeholder && wIn.placeholder !== state.unit) { st.w = wIn.placeholder; wIn.value = st.w; }
         if (!st.r) {
           var lo = String(ex.reps).match(/\d+/);
@@ -1817,7 +1835,9 @@
     scrim.className = "scrim";
     scrim.innerHTML =
       '<div class="done-card" role="dialog" aria-modal="true" aria-labelledby="doneTitle">' +
-        '<div><div class="eyebrow">Session complete</div><h2 id="doneTitle">' + esc(session.dayName) + "</h2></div>" +
+        '<div><div class="eyebrow">Session complete' +
+          (sessionMinutes(session) ? " \u00b7 " + fmtMinutes(sessionMinutes(session)) : "") +
+        '</div><h2 id="doneTitle">' + esc(session.dayName) + "</h2></div>" +
         '<div class="done-stats">' +
           "<div><b>" + doneCount(session) + "</b><span>Sets</span></div>" +
           "<div><b>" + Math.round(repsOf(session)).toLocaleString() + "</b><span>Reps</span></div>" +
@@ -1909,6 +1929,7 @@
             '<span class="hist-main">' +
               "<b>" + esc(s.dayName) + "</b>" +
               '<span class="hist-sub">' + esc(prettyDate(s.date)) + " · " + doneCount(s) + " sets" +
+                (sessionMinutes(s) ? " · " + esc(fmtMinutes(sessionMinutes(s))) : "") +
                 (s.finished ? "" : '<span class="chip-live">In progress</span>') + "</span>" +
             "</span>" +
             '<span class="hist-vol"><b>' + Math.round(volumeOf(s)).toLocaleString() + "</b><span>" + esc(state.unit) + "</span></span>" +
@@ -2233,6 +2254,7 @@
       color: s.color || null,
       date: s.date,
       started_at: s.startedAt ? new Date(s.startedAt).toISOString() : null,
+      first_set_at: s.firstSetAt ? new Date(s.firstSetAt).toISOString() : null,
       finished_at: s.finishedAt ? new Date(s.finishedAt).toISOString() : null,
       sets_done: doneCount(s),
       volume: Math.round(volumeOf(s) * 100) / 100,
@@ -2429,6 +2451,7 @@
             key: r.client_key, date: r.date, dayId: r.day_id || "", dayName: r.day_name,
             color: r.color || "blue",
             startedAt: r.started_at ? Date.parse(r.started_at) : 0,
+            firstSetAt: r.first_set_at ? Date.parse(r.first_set_at) : 0,
             finishedAt: r.finished_at ? Date.parse(r.finished_at) : 0,
             finished: true, entries: entriesFor[r.id] || {}
           };
@@ -2495,11 +2518,9 @@
       for (var exId in s.entries) {
         if (s.entries[exId].sets.some(function (x) { return x.done; })) lifts++;
       }
-      var mins = (s.finishedAt && s.startedAt && s.finishedAt > s.startedAt)
-        ? Math.round((s.finishedAt - s.startedAt) / 60000) : 0;
       add("workout_finished", "finish:" + s.key,
           { day: s.dayName, sets: doneCount(s), volume: Math.round(volumeOf(s)), unit: state.unit,
-            lifts: lifts, minutes: mins > 0 && mins < 600 ? mins : 0, prs: recordsIn(s).length }, when);
+            lifts: lifts, minutes: sessionMinutes(s), prs: recordsIn(s).length }, when);
       recordsIn(s).forEach(function (r) {
         add("pr", ["pr", r.name, s.date, r.w, r.r].join(":"),
             { exercise: r.name, weight: r.w, reps: r.r, per_hand: !!r.each,
@@ -2943,13 +2964,11 @@
   function feedSub(ev) {
     var p = ev.payload || {};
     if (ev.type === "workout_finished") {
-      var bits = [p.sets + " set" + (Number(p.sets) === 1 ? "" : "s")];
-      if (p.lifts) bits.push("across " + p.lifts + " exercise" + (Number(p.lifts) === 1 ? "" : "s"));
+      var bits = [];
+      if (p.lifts) bits.push(p.lifts + " exercise" + (Number(p.lifts) === 1 ? "" : "s"));
+      bits.push(p.sets + " set" + (Number(p.sets) === 1 ? "" : "s"));
       bits.push(Number(p.volume || 0).toLocaleString() + " " + esc(p.unit || "kg"));
-      if (p.minutes) {
-        var h = Math.floor(p.minutes / 60), m = p.minutes % 60;
-        bits.push(h ? h + "h " + m + "m" : m + " min");
-      }
+      if (p.minutes) bits.push(fmtMinutes(p.minutes));
       if (p.prs) bits.push(p.prs + " record" + (Number(p.prs) === 1 ? "" : "s") + " \ud83c\udfc6");
       return bits.join(" \u00b7 ");
     }

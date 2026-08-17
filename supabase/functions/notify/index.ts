@@ -94,8 +94,9 @@ function describe(ev: { type: string; payload: Record<string, unknown> }, who: s
   const p = ev.payload ?? {};
 
   if (ev.type === "workout_finished") {
-    const bits = [`${p.sets ?? 0} set${Number(p.sets) === 1 ? "" : "s"}`];
-    if (p.lifts) bits.push(`across ${p.lifts} exercise${Number(p.lifts) === 1 ? "" : "s"}`);
+    const bits: string[] = [];
+    if (p.lifts) bits.push(`${p.lifts} exercise${Number(p.lifts) === 1 ? "" : "s"}`);
+    bits.push(`${p.sets ?? 0} set${Number(p.sets) === 1 ? "" : "s"}`);
     bits.push(`${Number(p.volume ?? 0).toLocaleString()} ${p.unit ?? "kg"}`);
     if (p.minutes) {
       const h = Math.floor(Number(p.minutes) / 60), m = Number(p.minutes) % 60;
