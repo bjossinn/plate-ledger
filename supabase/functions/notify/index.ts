@@ -209,9 +209,10 @@ const CHECKPOINTS: Checkpoint[] = [
   { at: "12:00", hour: 12, ideal: { water: 0.30 } },
   { at: "14:00", hour: 14, ideal: { protein: 0.40 } },
   { at: "15:00", hour: 15, ideal: { water: 0.55 } },
-  { at: "17:00", hour: 17, ideal: { creatine: 0 } },          // binary: taken or not
   { at: "18:00", hour: 18, ideal: { water: 0.80, protein: 0.70 } },
+  { at: "19:00", hour: 19, ideal: { water: 0.88 } },          // last call for water
   { at: "20:00", hour: 20, ideal: { protein: 0.90 } },
+  { at: "21:00", hour: 21, ideal: { creatine: 0 } },          // binary: taken or not
 ];
 
 const MAX_PER_METRIC_PER_DAY = 2;
