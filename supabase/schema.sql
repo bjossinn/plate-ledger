@@ -182,6 +182,19 @@ create table if not exists public.shared_days (
   check (owner_id <> recipient_id)
 );
 
+-- ------------------------------------------------------------ reminder log
+-- What has already been nudged today. The scheduler runs on a fixed cadence
+-- and clocks drift, so "did we already send this one" has to be a fact in a
+-- table rather than an assumption about timing.
+create table if not exists public.reminder_log (
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  date       date not null,
+  metric     text not null,
+  checkpoint text not null,
+  sent_at    timestamptz not null default now(),
+  primary key (user_id, date, metric, checkpoint)
+);
+
 -- --------------------------------------------------------- push subscriptions
 create table if not exists public.push_subscriptions (
   id         uuid primary key default gen_random_uuid(),
@@ -229,6 +242,7 @@ alter table public.session_details    enable row level security;
 alter table public.fuel_days          enable row level security;
 alter table public.prs                enable row level security;
 alter table public.events             enable row level security;
+alter table public.reminder_log      enable row level security;
 alter table public.programs          enable row level security;
 alter table public.shared_days       enable row level security;
 alter table public.push_subscriptions enable row level security;
@@ -331,6 +345,11 @@ create policy events_read on public.events for select to authenticated
 drop policy if exists events_write on public.events;
 create policy events_write on public.events for insert to authenticated
   with check (user_id = auth.uid());
+
+-- reminder log: yours to read; only the scheduler (service role) writes
+drop policy if exists reminder_log_own on public.reminder_log;
+create policy reminder_log_own on public.reminder_log for select to authenticated
+  using (user_id = auth.uid());
 
 -- programs: yours alone
 drop policy if exists programs_own on public.programs;

@@ -2,4 +2,4 @@
 project_id = "kjaoltyumjmcunyvhmvb"
 
 [functions.notify]
-verify_jwt = true
+verify_jwt = false

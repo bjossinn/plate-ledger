@@ -75,6 +75,25 @@ exercise ids survive the update, so a renamed lift keeps its history.
 
 Only accepted friends can send you a day; the database rejects it otherwise.
 
+### Fuel reminders
+
+A scheduled job nudges you when you are behind, on pace rather than on a fixed halfway mark.
+Each checkpoint carries the fraction of the day's target you would ideally be at, and a nudge
+only fires below **ideal x 0.6** — so a normal day never buzzes.
+
+| | 12:00 | 14:00 | 15:00 | 17:00 | 18:00 | 20:00 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Water | 30% | | 55% | | 80% | |
+| Protein | | 40% | | | 70% | 90% |
+| Creatine | | | | any | | |
+
+Water is linear because it is drunk through the day. Protein is not — it arrives in meals, so its
+checkpoints sit just *after* people eat rather than nagging at 11:30 for not having had lunch.
+Creatine is one dose, where pace means nothing, so it is checked once and only if untouched.
+
+At most two nudges per metric per day, one notification per checkpoint however many metrics are
+behind, and nothing after 20:00 — telling someone at 22:00 that they owe 2.5 L is bad advice.
+
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the

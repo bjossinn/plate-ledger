@@ -23,7 +23,6 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const REMINDER_HOUR = 16;
 
 webpush.setVapidDetails(
   Deno.env.get("VAPID_SUBJECT") ?? "mailto:nobody@example.com",
@@ -192,52 +191,142 @@ async function selftest(req: Request) {
   return json({ sent, devices: subs?.length ?? 0 });
 }
 
-/** Nudge anyone who is behind on fuel and whose local clock just passed the hour. */
+/* ---------- fuel reminders ----------
+   Pace, not a fixed halfway mark. Each checkpoint carries the fraction of the
+   day's target you would ideally be at, and a nudge only fires below
+   ideal x TOLERANCE — so being merely a bit behind never buzzes anyone.
+
+   Water is spread evenly so its pace is linear. Protein is NOT: it arrives in
+   meals, so its checkpoints sit just after people eat rather than pretending
+   intake is continuous. Creatine is one dose, where pace means nothing at all. */
+
+const TOLERANCE = 0.6;
+const DEFAULTS: Record<string, number> = { protein: 200, creatine: 10, water: 3000 };
+
+type Checkpoint = { at: string; hour: number; ideal: Record<string, number> };
+
+const CHECKPOINTS: Checkpoint[] = [
+  { at: "12:00", hour: 12, ideal: { water: 0.30 } },
+  { at: "14:00", hour: 14, ideal: { protein: 0.40 } },
+  { at: "15:00", hour: 15, ideal: { water: 0.55 } },
+  { at: "17:00", hour: 17, ideal: { creatine: 0 } },          // binary: taken or not
+  { at: "18:00", hour: 18, ideal: { water: 0.80, protein: 0.70 } },
+  { at: "20:00", hour: 20, ideal: { protein: 0.90 } },
+];
+
+const MAX_PER_METRIC_PER_DAY = 2;
+
+/* Same nudge every day stops being read. Varied by day and metric so it is
+   stable within a day but different tomorrow. */
+const LINES: Record<string, Array<(d: string, t: string, left: string) => [string, string]>> = {
+  water: [
+    (d, t, left) => ["💧 Your water bottle is sulking", `${d} of ${t}. ${left} still owed.`],
+    (_d, _t, left) => ["💧 Best tap water on earth", `And you are ignoring it. ${left} to go.`],
+    (d, t, left) => ["💧 Hydration check", `${d} of ${t} — ${left} left before the day runs out.`],
+  ],
+  protein: [
+    (d, t, left) => ["🍗 Protein is lagging", `${d} of ${t}. That builds nothing. ${left} to go.`],
+    (_d, _t, left) => ["🍗 Gains need groceries", `${left} of protein still owed today.`],
+    (d, t, _left) => ["🍗 Feed the machine", `${d} of ${t} so far. The bar noticed.`],
+  ],
+  creatine: [
+    () => ["⚡ Creatine untouched", "Five grams. Ten seconds. Go on."],
+    () => ["⚡ Your creatine is sulking in the tub", "It has one job and so do you."],
+    () => ["⚡ Scoop missing", "The cheapest thing that works and it is still sitting there."],
+  ],
+};
+
+function fmt(metric: string, value: number) {
+  if (metric === "water") {
+    const litres = value / 1000;
+    return (Math.round(litres * 100) / 100) + " L";
+  }
+  return Math.round(value) + " g";
+}
+
+function pick<T>(list: T[], seed: string) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return list[h % list.length];
+}
+
 async function reminder(req: Request) {
   const key = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-  if (key !== SERVICE_KEY) return json({ error: "forbidden" }, 403);
+  const token = Deno.env.get("REMINDER_TOKEN") ?? "";
+  if (key !== SERVICE_KEY && !(token && key === token)) return json({ error: "forbidden" }, 403);
 
   const { data: people } = await admin.from("profiles").select("id,handle,timezone");
-  let nudged = 0;
+  let nudged = 0, considered = 0;
 
   for (const p of people ?? []) {
-    const tz = p.timezone || "UTC";
-    let localHour: number, localDate: string;
+    const tz = p.timezone;
+    if (!tz) continue;                       // no zone, no idea when their day is
+
+    let hour: number, date: string;
     try {
       const now = new Date();
-      localHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "numeric", hour12: false }).format(now));
-      localDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+      hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "numeric", hour12: false }).format(now));
+      date = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
     } catch {
-      continue; // unknown timezone, skip rather than guess
+      continue;                              // unknown zone: skip rather than guess
     }
-    if (localHour !== REMINDER_HOUR) continue;
 
-    const { data: rows } = await admin
-      .from("fuel_days").select("*").eq("user_id", p.id).eq("date", localDate).maybeSingle();
+    const cp = CHECKPOINTS.find((c) => c.hour === hour);
+    if (!cp) continue;
+    considered++;
 
-    // No row at all means nothing has synced today — the server genuinely does
-    // not know, so say so softly rather than claiming they have eaten nothing.
-    const behind: string[] = [];
-    const check = (label: string, total: number, target: number) => {
-      if (target > 0 && total < target / 2) behind.push(label);
-    };
-    check("protein", Number(rows?.protein ?? 0), Number(rows?.target_protein ?? 0) || 200);
-    check("creatine", Number(rows?.creatine ?? 0), Number(rows?.target_creatine ?? 0) || 10);
-    check("water", Number(rows?.water ?? 0), Number(rows?.target_water ?? 0) || 3000);
+    const { data: row } = await admin
+      .from("fuel_days").select("*").eq("user_id", p.id).eq("date", date).maybeSingle();
+
+    const { data: already } = await admin
+      .from("reminder_log").select("metric,checkpoint").eq("user_id", p.id).eq("date", date);
+    const sentAt = new Set((already ?? []).map((r) => `${r.metric}|${r.checkpoint}`));
+    const countFor = (m: string) => (already ?? []).filter((r) => r.metric === m).length;
+
+    const behind: Array<{ metric: string; done: number; target: number }> = [];
+
+    for (const [metric, ideal] of Object.entries(cp.ideal)) {
+      if (sentAt.has(`${metric}|${cp.at}`)) continue;                 // already sent this one
+      if (countFor(metric) >= MAX_PER_METRIC_PER_DAY) continue;       // enough for one day
+
+      const target = Number(row?.[`target_${metric}`] ?? 0) || DEFAULTS[metric];
+      const done = Number(row?.[metric] ?? 0);
+      if (done >= target) continue;                                   // already there
+
+      const isBehind = metric === "creatine" ? done <= 0 : done < target * ideal * TOLERANCE;
+      if (isBehind) behind.push({ metric, done, target });
+    }
+
     if (!behind.length) continue;
 
-    const list = behind.length === 1
-      ? behind[0]
-      : behind.slice(0, -1).join(", ") + " and " + behind[behind.length - 1];
+    /* One buzz per checkpoint, even when two metrics are lagging. */
+    let title: string, body: string;
+    if (behind.length === 1) {
+      const b = behind[0];
+      const line = pick(LINES[b.metric], date + b.metric);
+      [title, body] = line(fmt(b.metric, b.done), fmt(b.metric, b.target), fmt(b.metric, b.target - b.done));
+    } else {
+      const names = behind.map((b) => b.metric).join(" and ");
+      title = "💧🍗 Behind on " + names;
+      body = behind.map((b) => `${b.metric}: ${fmt(b.metric, b.done)} of ${fmt(b.metric, b.target)}`).join(" · ");
+    }
 
-    nudged += await sendTo([p.id], {
-      title: "Still short on " + list,
-      body: "Under halfway with the day nearly gone — worth a top-up.",
-      tag: "fuel-reminder",
-      url: "/plate-ledger/",
-    });
+    /* Record the DECISION before attempting delivery. If it were recorded only
+       on success, a phone that is unreachable right now would be re-attempted
+       every half hour for the rest of the day. A missed checkpoint is far
+       better than a loop, and there are later checkpoints anyway. */
+    await admin.from("reminder_log").upsert(
+      behind.map((b) => ({ user_id: p.id, date, metric: b.metric, checkpoint: cp.at })),
+      { onConflict: "user_id,date,metric,checkpoint", ignoreDuplicates: true },
+    );
+
+    const sent = await sendTo([p.id], { title, body, tag: "fuel-reminder", url: "/plate-ledger/" });
+    if (sent) nudged++;
+    console.log(`reminder: @${p.handle} at ${cp.at} local — behind on ${behind.map((b) => b.metric).join(", ")}, delivered to ${sent}`);
   }
-  return json({ nudged });
+
+  console.log(`reminder: ${considered} at a checkpoint, ${nudged} nudged`);
+  return json({ considered, nudged });
 }
 
 Deno.serve(async (req) => {
