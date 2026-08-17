@@ -15,6 +15,9 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
   *, *::before, *::after { box-sizing: border-box; }
+  /* an author display rule beats the UA stylesheet's [hidden], so anything
+     with display:flex would ignore the attribute entirely */
+  [hidden] { display: none !important; }
   html { -webkit-text-size-adjust: 100%; background: var(--bg); }
   body { margin: 0; min-height: 100%; }
   button, input, textarea, select { font-family: inherit; }
@@ -130,6 +133,8 @@
     min-height: 100vh;
     padding-bottom: 118px;
   }
+  /* no fixed bar on this view, so no room reserved for one */
+  .app.no-bottom { padding-bottom: 28px; }
 
   /* ---- top bar ---- */
   .top {
@@ -721,6 +726,27 @@
   .timer span { font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
   .timer.running { background: var(--day); border-color: var(--day); color: #fff; }
   .timer.running span { color: rgba(255,255,255,.8); }
+  .rest-banner {
+    appearance: none;
+    border: 0;
+    cursor: pointer;
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    background: var(--plate-green);
+    color: #fff;
+    border-radius: 12px;
+    padding: 15px 16px;
+    font: inherit;
+    animation: rise .22s cubic-bezier(.2,.8,.3,1);
+  }
+  .rest-banner b { font-size: 16px; font-weight: 800; letter-spacing: -.02em; }
+  .rest-banner span { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.85); }
+
   .timer.save { background: var(--day); border-color: var(--day); color: #fff; }
   .timer.save b { font-family: inherit; font-size: 15px; letter-spacing: -.01em; }
   .timer.save span { color: rgba(255,255,255,.85); }
@@ -762,7 +788,10 @@
   <main id="view"></main>
 
   <div class="bottom" id="bottom">
-    <div class="bottom-in">
+    <button class="rest-banner" id="restBanner" type="button" role="status" aria-live="polite" hidden>
+      <b>Rest's over</b><span>Back on the bar</span>
+    </button>
+    <div class="bottom-in" id="bottomRow">
       <div class="prog">
         <div class="prog-top"><b id="progLabel">0 of 0 sets</b><span id="progVol"></span></div>
         <div class="track"><div class="fill" id="progFill"></div></div>
@@ -777,7 +806,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.12.0";
+  var VERSION = "1.13.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -933,6 +962,7 @@
       social: defaultSocial(),
       unit: "kg",
       rest: 120,
+      sound: true,
       theme: "system",
       day: "d1"
     };
@@ -957,6 +987,7 @@
           social: normalizeSocial(saved.social),
           unit: saved.unit === "lb" ? "lb" : "kg",
           rest: typeof saved.rest === "number" ? saved.rest : 120,
+          sound: saved.sound !== false,
           theme: saved.theme || "system",
           day: saved.day || saved.program[0].id
         };
@@ -1167,9 +1198,81 @@
     return n;
   }
 
+  /* ---------- the bell ----------
+     Synthesised rather than loaded: an audio file is one more thing to fetch,
+     and this has to work in a basement. Two notes a beat apart, quick decay —
+     audible over a gym without being a fire alarm. */
+  var audioCtx = null;
+
+  function primeAudio() {
+    if (!state.sound) return;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!audioCtx) audioCtx = new Ctx();
+      /* iOS starts every context suspended until a real tap unlocks it, which
+         is why this is called from the tap that starts the timer. */
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (e) { audioCtx = null; }
+  }
+
+  function ding() {
+    if (!state.sound || !audioCtx) return;
+    try {
+      [[880, 0], [1318.5, 0.13]].forEach(function (note) {
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        var at = audioCtx.currentTime + note[1];
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(note[0], at);
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(0.32, at + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.85);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(at);
+        osc.stop(at + 0.9);
+      });
+    } catch (e) { /* a silent timer is better than a broken one */ }
+    if (navigator.vibrate) { try { navigator.vibrate([120, 60, 120]); } catch (e) {} }
+  }
+
   /* ---------- rest timer ---------- */
   var timerEnd = 0, timerTick = null, timerLen = 0, timerDay = null;
   var timerEl = document.getElementById("timer");
+
+  var restOver = false;
+  var restBannerEl = document.getElementById("restBanner");
+  var bottomRowEl = document.getElementById("bottomRow");
+
+  function showRestOver() {
+    restOver = true;
+    ding();
+    paintBottom();
+  }
+
+  function clearRestOver() {
+    if (!restOver) return;
+    restOver = false;
+    paintBottom();
+  }
+
+  var bottomEl = document.getElementById("bottom");
+
+  function bottomBelongsHere() {
+    if (restOver || timerEnd) return true;              /* a live rest follows you */
+    return ui.view === "train" || ui.view === "fuel";   /* otherwise: training only */
+  }
+
+  function paintBottom() {
+    var show = bottomBelongsHere();
+    bottomEl.hidden = !show;
+    appEl.classList.toggle("no-bottom", !show);
+    restBannerEl.hidden = !restOver;
+    bottomRowEl.hidden = restOver;
+  }
+
+  restBannerEl.addEventListener("click", clearRestOver);
 
   function paintTimer() {
     /* Every set ticked: there is nothing left to rest for, so the button
@@ -1188,23 +1291,27 @@
     timerEl.className = "timer running";
     timerEl.innerHTML = "<b>" + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0") +
       "</b><span>Tap to stop</span>";
-    if (left <= 0) stopTimer();
+    if (left <= 0) { stopTimer(); showRestOver(); }
   }
 
   /* Rest length comes from the exercise you just finished; a bare tap on the
      button reuses whatever you last rested for. */
   function startTimer(seconds) {
+    clearRestOver();
+    primeAudio();                       /* called from a tap, which iOS requires */
     timerLen = seconds || timerLen || state.rest;
     timerEnd = Date.now() + timerLen * 1000;
     if (timerTick) clearInterval(timerTick);
     timerTick = setInterval(paintTimer, 250);
     paintTimer();
+    paintBottom();
   }
 
   function stopTimer() {
     timerEnd = 0;
     if (timerTick) { clearInterval(timerTick); timerTick = null; }
     paintTimer();
+    paintBottom();
   }
 
   timerEl.addEventListener("click", function () {
@@ -1306,6 +1413,7 @@
     else viewEl.innerHTML = dataHTML();
     updateProgress();
     paintTimer();
+    paintBottom();
   }
 
   /* ---------- train view ---------- */
@@ -1417,6 +1525,7 @@
       st.done = !st.done;
       if (st.done) {
         if (!s.firstSetAt) s.firstSetAt = Date.now();   /* the session really starts here */
+        clearRestOver();
         if (!st.w && wIn.placeholder && wIn.placeholder !== state.unit) { st.w = wIn.placeholder; wIn.value = st.w; }
         if (!st.r) {
           var lo = String(ex.reps).match(/\d+/);
@@ -1431,6 +1540,7 @@
       if (card) card.outerHTML = exerciseCardHTML(s, ex);
       updateProgress();
       paintTimer();
+      paintBottom();
       return;
     }
 
@@ -1977,6 +2087,12 @@
         '<div class="lab">Weight unit</div>' +
         '<div class="segs"><button class="btn" data-unit="kg" aria-pressed="' + (state.unit === "kg") + '">Kilograms</button>' +
         '<button class="btn" data-unit="lb" aria-pressed="' + (state.unit === "lb") + '">Pounds</button></div>' +
+        '<div class="lab" style="margin-top:6px">Rest alarm</div>' +
+        '<div class="segs">' +
+          '<button class="btn" data-sound="1" aria-pressed="' + (state.sound !== false) + '">Sound on</button>' +
+          '<button class="btn" data-sound="0" aria-pressed="' + (state.sound === false) + '">Silent</button>' +
+        "</div>" +
+        '<p class="hint">A chime when the rest timer runs out. The banner appears either way.</p>' +
         '<div class="lab" style="margin-top:6px">Default rest</div>' +
         '<p class="hint">Every exercise carries its own rest — 3:00 on the compounds, 1:30 on the isolation work — and you change it under <b>Edit</b> on any day. This one only covers exercises you add yourself and a bare tap on the timer button.</p>' +
         '<div class="segs">' + [60, 90, 120, 180].map(function (r) {
@@ -2046,6 +2162,15 @@
     var u = t.closest("[data-unit]");
     if (u) { state.unit = u.dataset.unit; save(); render(); return; }
 
+    var snd = t.closest("[data-sound]");
+    if (snd) {
+      state.sound = snd.dataset.sound === "1";
+      save();
+      if (state.sound) { primeAudio(); ding(); }   /* let them hear what they chose */
+      render();
+      return;
+    }
+
     var r = t.closest("[data-rest]");
     if (r) { state.rest = Number(r.dataset.rest); save(); render(); return; }
 
@@ -2084,6 +2209,7 @@
           social: normalizeSocial(parsed.social),
           unit: parsed.unit === "lb" ? "lb" : "kg",
           rest: typeof parsed.rest === "number" ? parsed.rest : 120,
+          sound: parsed.sound !== false,
           theme: parsed.theme || "system",
           day: parsed.day || parsed.program[0].id
         };
