@@ -770,7 +770,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.8.3";
+  var VERSION = "1.9.0";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -892,7 +892,7 @@
   function defaultFuel() { return { targets: defaultTargets(), days: {} }; }
 
   /* Cached so the Friends tab shows something without a signal. */
-  function defaultSocial() { return { links: [], people: {}, feed: [], fetchedAt: null }; }
+  function defaultSocial() { return { links: [], people: {}, feed: [], shares: [], sentShares: [], fetchedAt: null }; }
 
   function normalizeSocial(v) {
     if (!v || typeof v !== "object") return defaultSocial();
@@ -900,6 +900,8 @@
       links: Array.isArray(v.links) ? v.links : [],
       people: (v.people && typeof v.people === "object") ? v.people : {},
       feed: Array.isArray(v.feed) ? v.feed : [],
+      shares: Array.isArray(v.shares) ? v.shares : [],
+      sentShares: Array.isArray(v.sentShares) ? v.sentShares : [],
       fetchedAt: v.fetchedAt || null
     };
   }
@@ -1472,8 +1474,32 @@
       "</div></section>" +
       cards +
       '<button class="btn ghost" data-addex>+ Add exercise</button>' +
+      shareCardHTML(day) +
       '<div class="segs"><button class="btn" data-addday>+ Add training day</button>' +
       (state.program.length > 1 ? '<button class="btn danger" data-delday>Delete day</button>' : "") + "</div>";
+  }
+
+  function shareCardHTML(day) {
+    if (!auth || !auth.handle) return "";
+    var friends = (state.social.links || []).filter(function (l) { return l.status === "accepted"; });
+    if (!friends.length) return "";
+
+    return '<section class="card"><div class="edit-card">' +
+      '<div class="lab">Send this day to a friend</div>' +
+      '<p class="hint">They get a copy they can accept. Change it later and send again — they are offered an update, and anything they have already logged against it stays attached.</p>' +
+      friends.map(function (l) {
+        var fid = otherSide(l);
+        var sent = (state.social.sentShares || []).filter(function (x) {
+          return x.recipient_id === fid && x.day_key === day.id;
+        })[0];
+        return '<div class="share-row" style="background:none;border-top:0;padding:6px 0">' +
+          "<span>" + esc(nameOf(fid)) + (sent ? " · sent v" + sent.version : "") + "</span>" +
+          '<button class="btn sm" data-shareday="' + esc(fid) + '">' + (sent ? "Send update" : "Send") + "</button>" +
+        "</div>";
+      }).join("") +
+      (social.shareMsg ? '<p class="hint" style="color:var(--plate-green)">' + esc(social.shareMsg) + "</p>" : "") +
+      (social.error ? '<p class="hint" style="color:var(--plate-red)">' + esc(social.error) + "</p>" : "") +
+    "</div></section>";
   }
 
   function editField(inp) {
@@ -1501,6 +1527,9 @@
       if (exR) { exR.rest = Number(xr.dataset.exrest); save(); render(); }
       return;
     }
+
+    var sd = t.closest("[data-shareday]");
+    if (sd) { shareDay(day, sd.dataset.shareday); return; }
 
     var xe = t.closest("[data-exeach]");
     if (xe) {
@@ -2421,7 +2450,8 @@
         return Promise.all([
           api("/rest/v1/friendships?select=*"),
           api("/rest/v1/events?select=*&order=created_at.desc&limit=60"),
-          api("/rest/v1/profiles?select=id,handle,display_name")
+          api("/rest/v1/profiles?select=id,handle,display_name"),
+          api("/rest/v1/shared_days?select=*&order=updated_at.desc")
         ]);
       })
       .then(function (res) {
@@ -2430,11 +2460,96 @@
         var people = {};
         (res[2] || []).forEach(function (p) { people[p.id] = p; });
         state.social.people = people;
+        var days = res[3] || [];
+        state.social.shares = days.filter(function (d) { return d.recipient_id === auth.user_id; });
+        state.social.sentShares = days.filter(function (d) { return d.owner_id === auth.user_id; });
         state.social.fetchedAt = Date.now();
         save();
       })
       .catch(function (err) { social.error = err.message; })
       .then(function () { social.busy = false; if (ui.view === "friends") render(); });
+  }
+
+  /* ---- sharing a training day ----
+     A share carries the owner's exercise ids. The recipient stores them under a
+     prefix derived from the share, so a later update matches exercise for
+     exercise and whatever they have already logged stays attached. */
+  function sharedExId(shareId, originalId) { return "sh" + String(shareId).slice(0, 8) + "_" + originalId; }
+
+  function dayPayload(day) {
+    return {
+      name: day.name,
+      color: day.color,
+      ex: day.ex.map(function (ex) {
+        return { id: ex.id, name: ex.name, sets: ex.sets, reps: ex.reps,
+                 note: ex.note || "", rest: restOf(ex), each: !!ex.each };
+      })
+    };
+  }
+
+  function shareDay(day, friendId) {
+    social.error = null;
+    social.shareMsg = null;
+    var existing = (state.social.sentShares || []).filter(function (s) {
+      return s.recipient_id === friendId && s.day_key === day.id;
+    })[0];
+
+    return withSession()
+      .then(function () {
+        return api("/rest/v1/shared_days?on_conflict=owner_id,recipient_id,day_key", {
+          method: "POST", prefer: "resolution=merge-duplicates,return=representation",
+          body: [{
+            owner_id: auth.user_id, recipient_id: friendId, day_key: day.id,
+            day: dayPayload(day),
+            version: existing ? existing.version + 1 : 1,
+            updated_at: new Date().toISOString()
+          }]
+        });
+      })
+      .then(function (rows) {
+        var v = (rows && rows[0] && rows[0].version) || 1;
+        social.shareMsg = (existing ? "Update sent to " : "Sent to ") + nameOf(friendId) + " · v" + v;
+        return loadSocial();
+      })
+      .catch(function (err) { social.error = err.message; render(); });
+  }
+
+  /* Copy a shared day into the program, or bring an existing copy up to date. */
+  function applyShare(share) {
+    var payload = share.day || {};
+    var mine = state.program.filter(function (d) { return d.src && d.src.shareId === share.id; })[0];
+    var ex = (payload.ex || []).map(function (e) {
+      return {
+        id: sharedExId(share.id, e.id), name: e.name, sets: e.sets, reps: e.reps,
+        note: e.note || "", rest: typeof e.rest === "number" ? e.rest : defaultRest(e.name),
+        each: !!e.each
+      };
+    });
+
+    if (mine) {
+      mine.name = payload.name || mine.name;
+      mine.color = payload.color || mine.color;
+      mine.ex = ex;
+      mine.src.version = share.version;
+    } else {
+      state.program.push({
+        id: uid("d"), name: payload.name || "Shared day", color: payload.color || "blue",
+        ex: ex,
+        src: { shareId: share.id, owner: share.owner_id, version: share.version }
+      });
+    }
+    normalize(state.program);
+    save();
+    ui.view = "train";
+    state.day = (mine || state.program[state.program.length - 1]).id;
+    timerDay = null;
+    render();
+  }
+
+  function shareStatus(share) {
+    var mine = state.program.filter(function (d) { return d.src && d.src.shareId === share.id; })[0];
+    if (!mine) return "new";
+    return mine.src.version < share.version ? "update" : "current";
   }
 
   function nameOf(id) {
@@ -2737,6 +2852,26 @@
 
     var err = social.error ? '<div class="warn">' + esc(social.error) + "</div>" : "";
 
+    /* days friends have sent over, with whatever action each one needs */
+    var shares = (state.social.shares || []);
+    var shared = shares.length
+      ? '<section class="card">' + shares.map(function (sh) {
+          var status = shareStatus(sh);
+          var count = ((sh.day || {}).ex || []).length;
+          var label = status === "new" ? "Add" : status === "update" ? "Update" : "Up to date";
+          return '<div class="who">' +
+            '<span class="avatar">' + esc((nameOf(sh.owner_id).replace("@", "")[0]) || "?") + "</span>" +
+            '<span class="who-main"><b>' + esc((sh.day || {}).name || "A day") + "</b><span>" +
+              esc(nameOf(sh.owner_id)) + " · " + count + " exercise" + (count === 1 ? "" : "s") +
+              (status === "update" ? " · new version" : "") + "</span></span>" +
+            '<span class="who-acts">' +
+              (status === "current"
+                ? '<span class="feed-when">Up to date</span>'
+                : '<button class="btn sm day" data-takeshare="' + esc(sh.id) + '">' + label + "</button>") +
+            "</span></div>";
+        }).join("") + "</section>"
+      : "";
+
     var add =
       '<section class="card"><div class="edit-card">' +
         '<div class="lab">Add someone</div>' +
@@ -2810,7 +2945,7 @@
         '</div><h1>Activity</h1></div>' +
       '<button class="btn" data-refreshfeed' + (social.busy ? " disabled" : "") + ">" +
         (social.busy ? "Refreshing…" : "Refresh") + "</button></div>" +
-      err + requests + feed + add + pendingOut + list;
+      err + requests + shared + feed + add + pendingOut + list;
   }
 
   function friendDetailHTML() {
@@ -2899,6 +3034,13 @@
       var body = {};
       body[iAmRequester(link) ? "requester_shares_detail" : "addressee_shares_detail"] = next;
       patchLink(link.id, body);
+      return;
+    }
+
+    var take = t.closest("[data-takeshare]");
+    if (take) {
+      var sh = (state.social.shares || []).filter(function (x) { return x.id === take.dataset.takeshare; })[0];
+      if (sh) applyShare(sh);
       return;
     }
 

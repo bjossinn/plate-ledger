@@ -61,6 +61,15 @@ Activity is re-derived from the local log on each sync rather than fired when it
 because when it happens you are usually in a gym with no signal. Each event carries a
 `dedup_key`, so re-syncing can never duplicate the feed, and only the last 14 days are emitted.
 
+### Sharing a training day
+
+Train a day into shape, then **Edit → Send this day to a friend**. They see it under Friends and
+choose to add it. Edit it later and send again: they are offered an **update** rather than a
+second copy, and anything they have already logged against it stays attached — the shared
+exercise ids survive the update, so a renamed lift keeps its history.
+
+Only accepted friends can send you a day; the database rejects it otherwise.
+
 ## Where the data lives
 
 In the browser's `localStorage`, under the key `plate-ledger-v1` — one JSON blob holding the

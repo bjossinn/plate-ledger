@@ -2,7 +2,7 @@
    Strategy: serve from cache immediately, refresh the cache in the background,
    so the app opens in a basement gym and still picks up updates next launch. */
 
-var CACHE = "plate-ledger-1.8.3";
+var CACHE = "plate-ledger-1.9.0";
 var SHELL = [
   "./",
   "./index.html",

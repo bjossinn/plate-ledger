@@ -155,6 +155,23 @@ create table if not exists public.events (
   created_at timestamptz not null default now()
 );
 
+-- ------------------------------------------------------------ shared days
+-- A training day sent to one friend. Re-sending the same day updates this row
+-- and bumps version, so the recipient is offered an update rather than a
+-- second copy — and their logged history stays attached to it.
+create table if not exists public.shared_days (
+  id           uuid primary key default gen_random_uuid(),
+  owner_id     uuid not null references public.profiles(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  day_key      text not null,                      -- the owner's local day id
+  day          jsonb not null,                     -- {name, color, ex:[...]}
+  version      int not null default 1,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  unique (owner_id, recipient_id, day_key),
+  check (owner_id <> recipient_id)
+);
+
 -- --------------------------------------------------------- push subscriptions
 create table if not exists public.push_subscriptions (
   id         uuid primary key default gen_random_uuid(),
@@ -192,6 +209,7 @@ create index if not exists events_user_created_idx on public.events (user_id, cr
 create index if not exists events_created_idx on public.events (created_at desc);
 create index if not exists friendships_addressee_idx on public.friendships (addressee, status);
 create index if not exists friendships_requester_idx on public.friendships (requester, status);
+create index if not exists shared_days_recipient_idx on public.shared_days (recipient_id, updated_at desc);
 
 -- ------------------------------------------------------------------------ RLS
 alter table public.profiles           enable row level security;
@@ -201,6 +219,7 @@ alter table public.session_details    enable row level security;
 alter table public.fuel_days          enable row level security;
 alter table public.prs                enable row level security;
 alter table public.events             enable row level security;
+alter table public.shared_days       enable row level security;
 alter table public.push_subscriptions enable row level security;
 
 -- profiles: yourself and anyone you have a friendship row with, pending
@@ -301,6 +320,17 @@ create policy events_read on public.events for select to authenticated
 drop policy if exists events_write on public.events;
 create policy events_write on public.events for insert to authenticated
   with check (user_id = auth.uid());
+
+-- shared days: both sides of the exchange can read it; only the owner writes,
+-- and only to someone who is actually an accepted friend
+drop policy if exists shared_days_read on public.shared_days;
+create policy shared_days_read on public.shared_days for select to authenticated
+  using (owner_id = auth.uid() or recipient_id = auth.uid());
+
+drop policy if exists shared_days_write on public.shared_days;
+create policy shared_days_write on public.shared_days for all to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid() and public.is_friend(recipient_id));
 
 -- push subscriptions: strictly private, never friend-visible
 drop policy if exists push_own on public.push_subscriptions;
