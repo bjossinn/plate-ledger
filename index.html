@@ -767,7 +767,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.8.0";
+  var VERSION = "1.8.1";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -848,6 +848,15 @@
       if (typeof f.targets[m.id] !== "number" || !(f.targets[m.id] > 0)) f.targets[m.id] = d[m.id];
     });
     f.days = f.days || {};
+    for (var date in f.days) {
+      METRICS.forEach(function (m) {
+        var arr = f.days[date][m.id];
+        if (!Array.isArray(arr)) return;
+        f.days[date][m.id] = arr.map(function (e) {
+          return (e && typeof e === "object") ? e : { v: Number(e) || 0, t: 0 };
+        });
+      });
+    }
     return f;
   }
 
@@ -1549,12 +1558,30 @@
     return d;
   }
 
+  /* Entries used to be bare numbers. They now carry the moment they were
+     logged, so the feed can say when a goal was actually reached. */
+  function entryAmount(e) { return Number(e && typeof e === "object" ? e.v : e) || 0; }
+  function entryTime(e) { return (e && typeof e === "object" && Number(e.t)) || 0; }
+
   function fuelTotal(date, id) {
     var arr = (state.fuel.days[date] || {})[id];
-    return Array.isArray(arr) ? arr.reduce(function (a, n) { return a + (Number(n) || 0); }, 0) : 0;
+    return Array.isArray(arr) ? arr.reduce(function (a, e) { return a + entryAmount(e); }, 0) : 0;
   }
 
   function fuelHit(date, id) { return fuelTotal(date, id) >= state.fuel.targets[id]; }
+
+  /* When the running total first crossed the target. Zero if the entry that
+     crossed it predates timestamps. */
+  function fuelHitAt(date, id) {
+    var arr = (state.fuel.days[date] || {})[id];
+    if (!Array.isArray(arr)) return 0;
+    var target = state.fuel.targets[id], running = 0;
+    for (var i = 0; i < arr.length; i++) {
+      running += entryAmount(arr[i]);
+      if (running >= target) return entryTime(arr[i]);
+    }
+    return 0;
+  }
 
   /* Trim trailing zeros so 1500 ml reads "1.5" and 3000 reads "3". */
   function fuelNum(m, value) {
@@ -1668,7 +1695,7 @@
 
   function addFuel(id, amount) {
     if (!isFinite(amount) || amount === 0) return;
-    fuelDay(todayKey())[id].push(amount);
+    fuelDay(todayKey())[id].push({ v: amount, t: Date.now() });
     save();
     render();
     queueSync();
@@ -2290,9 +2317,9 @@
         fuel.forEach(function (f) {
           if (state.fuel.days[f.date]) return;
           state.fuel.days[f.date] = {
-            protein: Number(f.protein) ? [Number(f.protein)] : [],
-            creatine: Number(f.creatine) ? [Number(f.creatine)] : [],
-            water: Number(f.water) ? [Number(f.water)] : []
+            protein: Number(f.protein) ? [{ v: Number(f.protein), t: 0 }] : [],
+            creatine: Number(f.creatine) ? [{ v: Number(f.creatine), t: 0 }] : [],
+            water: Number(f.water) ? [{ v: Number(f.water), t: 0 }] : []
           };
         });
 
@@ -2359,7 +2386,7 @@
         add("goal_hit", ["goal", m.id, date].join(":"),
             { metric: m.id, name: m.name, total: fuelNum(m, fuelTotal(date, m.id)),
               target: fuelNum(m, state.fuel.targets[m.id]), unit: m.unit },
-            Date.parse(date + "T12:00:00"));
+            fuelHitAt(date, m.id) || Date.parse(date + "T12:00:00"));
       });
     }
     return out;
@@ -2630,7 +2657,7 @@
 
   function ago(iso) {
     var mins = Math.floor((Date.now() - Date.parse(iso)) / 60000);
-    if (mins < 1) return "now";
+    if (mins < 1) return "now";   /* also catches a timestamp slightly ahead of us */
     if (mins < 60) return mins + "m";
     if (mins < 1440) return Math.floor(mins / 60) + "h";
     return Math.floor(mins / 1440) + "d";
@@ -2951,6 +2978,7 @@
 
   /* ---------- go ---------- */
   load();
+  save();          /* write back whatever load() had to migrate */
   auth = loadAuth();
   applyTheme();
   /* flush anything logged while offline since the app was last open */
