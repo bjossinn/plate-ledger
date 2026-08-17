@@ -770,7 +770,7 @@
   "use strict";
 
   /* ---------- storage ---------- */
-  var VERSION = "1.8.2";
+  var VERSION = "1.8.3";
   var KEY = "plate-ledger-v1";
   var store = null;
   try {
@@ -2503,7 +2503,7 @@
      the browser verify that a push came from this app. The private half lives
      in the edge function's secrets and never touches this repo. */
   var VAPID_PUBLIC = "BCwM-TT-rr1Gwsx2hxtpTbLbuF9_vanJ5uFXjboCcSp3uIDsZ3qUMYUYNdcALRSTy55Ome3bx3BM0vKodIsPpqQ";
-  var push = { state: "unknown", error: null, busy: false };
+  var push = { state: "unknown", error: null, busy: false, tested: null };
 
   function installedToHomeScreen() {
     return window.navigator.standalone === true ||
@@ -2589,6 +2589,25 @@
       .then(function (sub) { return withSession().then(function () { return storeSubscription(sub); }); })
       .then(function () { return sendTimezone(); })
       .then(function () { push.state = "on"; })
+      .catch(function (err) { push.error = err.message; })
+      .then(function () { push.busy = false; render(); });
+  }
+
+  /* Proves the whole chain — subscription, signing, the push service — without
+     needing a friend to log a workout for you. */
+  function testPush() {
+    push.busy = true;
+    push.error = null;
+    push.tested = null;
+    render();
+    withSession()
+      .then(function () { return api("/functions/v1/notify", { method: "POST", body: { kind: "test" } }); })
+      .then(function (res) {
+        if (!res || !res.devices) throw new Error("This phone is not registered. Turn notifications off and on again.");
+        push.tested = res.sent
+          ? "Sent to " + res.devices + " device" + (res.devices === 1 ? "" : "s") + " — check your lock screen."
+          : "Your phone is registered but the push service rejected it. Turn notifications off and on again.";
+      })
       .catch(function (err) { push.error = err.message; })
       .then(function () { push.busy = false; render(); });
   }
@@ -2921,7 +2940,12 @@
             ? '<p class="hint">Notifications are blocked for this app. Turn them back on in your phone settings, then reopen this page.</p>'
             : push.state === "on"
               ? '<p class="hint">On. You will hear about friends finishing a workout, setting a record or hitting a goal — and a nudge at 16:00 if you are behind on fuel.</p>' +
-                '<button class="btn" data-pushoff' + (push.busy ? " disabled" : "") + ">Turn off</button>"
+                (push.tested ? '<p class="hint" style="color:var(--plate-green)">' + esc(push.tested) + "</p>" : "") +
+                '<div class="segs">' +
+                  '<button class="btn day" data-pushtest' + (push.busy ? " disabled" : "") + ">" +
+                    (push.busy ? "Sending…" : "Send test") + "</button>" +
+                  '<button class="btn" data-pushoff' + (push.busy ? " disabled" : "") + ">Turn off</button>" +
+                "</div>"
               : '<p class="hint">Get told when a friend finishes a workout, sets a record or hits a goal, plus a nudge at 16:00 if you are behind on your own fuel.</p>' +
                 (installedToHomeScreen() ? "" :
                   '<p class="hint" style="color:var(--plate-red)">Add this to your Home Screen and open it from the icon first — an iPhone will not deliver notifications to a browser tab.</p>') +
@@ -2983,6 +3007,7 @@
     }
 
     if (t.closest("[data-pushon]")) { enablePush(); return true; }
+    if (t.closest("[data-pushtest]")) { testPush(); return true; }
     if (t.closest("[data-pushoff]")) { disablePush(); return true; }
     if (t.closest("[data-syncnow]")) { syncNow(); return true; }
     if (t.closest("[data-restore-cloud]")) { restoreFromCloud(); return true; }

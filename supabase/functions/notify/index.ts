@@ -154,6 +154,26 @@ async function fanout(req: Request) {
   return json({ sent, events: events.length });
 }
 
+/** Send the caller a notification on their own devices, to prove the chain works.
+    Scoped to whoever is signed in, so it can never be used to ping someone else. */
+async function selftest(req: Request) {
+  const jwt = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
+  const { data: me, error } = await admin.auth.getUser(jwt);
+  if (error || !me?.user) return json({ error: "not signed in" }, 401);
+
+  const { data: profile } = await admin.from("profiles").select("handle").eq("id", me.user.id).single();
+  const { data: subs } = await admin.from("push_subscriptions").select("id").eq("user_id", me.user.id);
+  console.log(`selftest: @${profile?.handle ?? "?"} has ${subs?.length ?? 0} registered device(s)`);
+
+  const sent = await sendTo([me.user.id], {
+    title: "Plate Ledger is wired up",
+    body: "If you can read this, notifications work" + (profile?.handle ? ", @" + profile.handle : "") + ".",
+    tag: "selftest",
+    url: "/plate-ledger/",
+  });
+  return json({ sent, devices: subs?.length ?? 0 });
+}
+
 /** Nudge anyone who is behind on fuel and whose local clock just passed the hour. */
 async function reminder(req: Request) {
   const key = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
@@ -208,6 +228,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     console.log("notify: invoked, kind =", body.kind ?? "fanout");
     if (body.kind === "reminder") return await reminder(req);
+    if (body.kind === "test") return await selftest(req);
     return await fanout(req);
   } catch (err) {
     console.log("notify: unhandled error —", String(err));
